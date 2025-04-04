@@ -301,6 +301,15 @@ export const useRoomStore = defineStore('room', () => {
     }
   }
 
+  // 设置当前房间状态（直接更新）
+  const setCurrentRoom = (roomData) => {
+    if (roomData) {
+      currentRoom.value = roomData
+      return true
+    }
+    return false
+  }
+
   return {
     // 状态
     currentRoom,
@@ -321,6 +330,7 @@ export const useRoomStore = defineStore('room', () => {
     createRoom,
     joinRoom,
     toggleReady,
-    leaveRoom
+    leaveRoom,
+    setCurrentRoom
   }
 }) 
