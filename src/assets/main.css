@@ -1,0 +1,204 @@
+@import './base.css';
+
+:root {
+  /* 主题颜色 */
+  --theme-primary: #5f79fc;
+  --theme-secondary: #4255bd;
+  --theme-accent: #ff4d4f;
+  
+  /* 背景颜色 */
+  --bg-dark: #13131f;
+  --bg-card: #1e1e2d;
+  --bg-hover: #252536;
+  
+  /* 文本颜色 */
+  --text-primary: #ffffff;
+  --text-secondary: #bebebe;
+  --text-disabled: #6c7293;
+  
+  /* 边框颜色 */
+  --border-light: #2c2c43;
+  
+  /* 状态颜色 */
+  --status-waiting: #fda92c;
+  --status-gaming: #00cfa1;
+  --status-ended: #ff4d4f;
+  
+  /* 间距 */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+  
+  /* 字体 */
+  --font-base: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  --font-display: 'Montserrat', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  background-color: var(--bg-dark);
+  color: var(--text-primary);
+  font-family: var(--font-base);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+a {
+  color: var(--theme-primary);
+  text-decoration: none;
+}
+
+/* 能量边框样式 */
+.energy-border {
+  position: relative;
+  border: 1px solid var(--border-light);
+  overflow: hidden;
+}
+
+.energy-border::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border: 1px solid transparent;
+  border-radius: inherit;
+  background: linear-gradient(
+    to right,
+    var(--theme-primary),
+    var(--theme-secondary),
+    var(--theme-primary)
+  ) border-box;
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.energy-border:hover::after {
+  opacity: 1;
+}
+
+/* 自定义滚动条 */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-dark);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-light);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-disabled);
+}
+
+/* 渐变色定义 */
+.gradient-primary {
+  background: linear-gradient(135deg, var(--theme-primary) 0%, var(--theme-secondary) 100%);
+}
+
+.gradient-dark {
+  background: linear-gradient(135deg, var(--bg-dark) 0%, var(--bg-card) 100%);
+}
+
+/* 发光效果 */
+.neon-glow {
+  box-shadow: 0 0 10px var(--theme-primary),
+              0 0 20px var(--theme-primary),
+              0 0 30px var(--theme-primary);
+}
+
+/* 主要按钮 */
+.btn-primary {
+  background: linear-gradient(135deg, var(--theme-primary) 0%, var(--theme-secondary) 100%);
+  border: none;
+  border-radius: 4px;
+  padding: 12px 24px;
+  color: white;
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  transition: all 0.3s ease;
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 15px var(--theme-primary);
+}
+
+/* 能量按钮 */
+.btn-energy {
+  background: transparent;
+  border: 2px solid var(--theme-secondary);
+  box-shadow: 0 0 10px var(--theme-secondary) inset;
+}
+
+.btn-energy:hover {
+  background: rgba(0,180,255,0.1);
+  box-shadow: 0 0 20px var(--theme-secondary) inset;
+}
+
+/* 标题样式 */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+h1 {
+  font-size: 32px;
+  margin-bottom: var(--spacing-lg);
+}
+
+h2 {
+  font-size: 28px;
+  margin-bottom: var(--spacing-md);
+}
+
+h3 {
+  font-size: 24px;
+  margin-bottom: var(--spacing-sm);
+}
+
+/* 响应式设计 */
+@media (min-width: 1024px) {
+  body {
+    display: flex;
+    place-items: center;
+  }
+
+  #app {
+    width: 100%;
+    max-width: 1280px;
+    margin: 0 auto;
+  }
+}
+
+@media (min-width: 1440px) {
+  #app {
+    max-width: 1440px;
+  }
+}
+
+@media (min-width: 1920px) {
+  #app {
+    max-width: 1760px;
+  }
+}
