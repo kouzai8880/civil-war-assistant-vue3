@@ -891,50 +891,401 @@ const captainActionText = computed(() => {
             
             <!-- 主要内容区域 -->
             <div class="content-area">
-              <!-- 根据房间状态显示不同的内容 -->
-              <template v-if="room.status === 'waiting'">
-                <!-- 房间主体 - 等待中状态 -->
-                <div class="room-body">
-                  <!-- 等待中状态的玩家列表 -->
-                  <div class="section-card players-container" v-if="room.status === 'waiting'">
-                    <div class="card-header">
-                      <h2 class="section-title">玩家列表 ({{ room.players.length }}/10)</h2>
-                    </div>
-                    
-                    <div class="player-grid">
-                      <!-- 显示已加入的玩家 -->
-                      <div 
-                        v-for="player in room.players" 
-                        :key="player.userId"
-                        class="player-card"
-                      >
-                        <img :src="player.avatar || 'https://placekitten.com/100/100'" alt="玩家头像" class="player-avatar">
+              <!-- 分割成两个部分：主体内容和聊天区域 -->
+              <div class="content-main-wrapper">
+                <!-- 根据房间状态显示不同的内容 -->
+                <div class="content-main">
+                  <template v-if="room.status === 'waiting'">
+                    <!-- 房间主体 - 等待中状态 -->
+                    <div class="room-body">
+                      <!-- 等待中状态的玩家列表 -->
+                      <div class="section-card players-container" v-if="room.status === 'waiting'">
+                        <div class="card-header">
+                          <h2 class="section-title">玩家列表 ({{ room.players.length }}/10)</h2>
+                        </div>
                         
-                        <div class="player-info">
-                          <div class="player-name">
-                            {{ player.username }}
-                            <span v-if="player.userId === room.creatorId" class="player-badge creator">房主</span>
+                        <div class="player-grid">
+                          <!-- 显示已加入的玩家 -->
+                          <div 
+                            v-for="player in room.players" 
+                            :key="player.userId"
+                            class="player-card"
+                          >
+                            <img :src="player.avatar || 'https://placekitten.com/100/100'" alt="玩家头像" class="player-avatar">
+                            
+                            <div class="player-info">
+                              <div class="player-name">
+                                {{ player.username }}
+                                <span v-if="player.userId === room.creatorId" class="player-badge creator">房主</span>
+                              </div>
+                               
+                              <div class="player-status" :class="player.status === 'ready' ? 'online' : 'afk'">
+                                {{ player.status === 'ready' ? '已准备' : '未准备' }}
+                              </div>
+                            </div>
                           </div>
-                           
-                          <div class="player-status" :class="player.status === 'ready' ? 'online' : 'afk'">
-                            {{ player.status === 'ready' ? '已准备' : '未准备' }}
+                          
+                          <!-- 空位 -->
+                          <div 
+                            v-for="n in (10 - room.players.length)" 
+                            :key="`empty-slot-${n}`"
+                            class="empty-slot"
+                          >
+                            <div class="empty-avatar"></div>
+                            <div>等待加入...</div>
                           </div>
                         </div>
                       </div>
-                      
-                      <!-- 空位 -->
-                      <div 
-                        v-for="n in (10 - room.players.length)" 
-                        :key="`empty-slot-${n}`"
-                        class="empty-slot"
-                      >
-                        <div class="empty-avatar"></div>
-                        <div>等待加入...</div>
+                    </div>
+                  </template>
+                  
+                  <!-- 选人阶段 -->
+                  <template v-else-if="room.status === 'picking'">
+                    <div class="room-body picking-phase">
+                      <div class="section-card picking-container">
+                        <div class="card-header">
+                          <h2 class="section-title">队员选择</h2>
+                          <div class="pick-status">
+                            当前回合: {{ pickingPhase.currentPick }}/{{ getTotalPickCount() }}
+                            ({{ pickingPhase.currentTeam === 1 ? '一队选择' : '二队选择' }})
+                          </div>
+                        </div>
+                        
+                        <div class="pick-content-container">
+                          <!-- 队伍区域 -->
+                          <div class="teams-container">
+                            <div class="team-group">
+                              <!-- 一队 -->
+                              <div class="team-red-section" :class="{'active-team': pickingPhase.currentTeam === 1}">
+                                <div class="team-info">
+                                  <h3 class="team-name">一队</h3>
+                                  <span v-if="pickingPhase.currentTeam === 1" class="current-pick-status">正在选人</span>
+                                </div>
+                                
+                                <div class="team-players-grid">
+                                  <!-- 队长位置 -->
+                                  <div 
+                                    v-for="player in room.players.filter(p => p.teamId === 1 && p.isCaptain)" 
+                                    :key="player.userId"
+                                    class="team-captain"
+                                  >
+                                    <div class="captain-badge">队长</div>
+                                    <img :src="player.avatar || 'https://placekitten.com/100/100'" alt="队长头像" class="captain-avatar">
+                                    <div class="captain-name">{{ player.username }}</div>
+                                  </div>
+                                  
+                                  <!-- 队员位置（已选择的玩家） -->
+                                  <div 
+                                    v-for="char in pickedCharacters.filter(c => c.teamId === 1)" 
+                                    :key="char.characterId"
+                                    class="picked-player"
+                                  >
+                                    <div class="pick-order">{{ char.pickOrder }}</div>
+                                    <img :src="char.characterAvatar" :alt="char.characterName" class="picked-avatar">
+                                    <div class="picked-name">{{ char.characterName }}</div>
+                                  </div>
+                                  
+                                  <!-- 空位 -->
+                                  <div 
+                                    v-for="n in (5 - room.players.filter(p => p.teamId === 1 && p.isCaptain).length - pickedCharacters.filter(c => c.teamId === 1).length)" 
+                                    :key="`empty-pick-1-${n}`"
+                                    class="empty-pick"
+                                  >
+                                    <div class="empty-player"></div>
+                                    <div>等待选择</div>
+                                  </div>
+                                </div>
+                              </div>
+                              
+                              <!-- 二队 -->
+                              <div class="team-blue-section" :class="{'active-team': pickingPhase.currentTeam === 2}">
+                                <div class="team-info">
+                                  <h3 class="team-name">二队</h3>
+                                  <span v-if="pickingPhase.currentTeam === 2" class="current-pick-status">正在选人</span>
+                                </div>
+                                
+                                <div class="team-players-grid">
+                                  <!-- 队长位置 -->
+                                  <div 
+                                    v-for="player in room.players.filter(p => p.teamId === 2 && p.isCaptain)" 
+                                    :key="player.userId"
+                                    class="team-captain"
+                                  >
+                                    <div class="captain-badge">队长</div>
+                                    <img :src="player.avatar || 'https://placekitten.com/100/100'" alt="队长头像" class="captain-avatar">
+                                    <div class="captain-name">{{ player.username }}</div>
+                                  </div>
+                                  
+                                  <!-- 队员位置（已选择的玩家） -->
+                                  <div 
+                                    v-for="char in pickedCharacters.filter(c => c.teamId === 2)" 
+                                    :key="char.characterId"
+                                    class="picked-player"
+                                  >
+                                    <div class="pick-order">{{ char.pickOrder }}</div>
+                                    <img :src="char.characterAvatar" :alt="char.characterName" class="picked-avatar">
+                                    <div class="picked-name">{{ char.characterName }}</div>
+                                  </div>
+                                  
+                                  <!-- 空位 -->
+                                  <div 
+                                    v-for="n in (5 - room.players.filter(p => p.teamId === 2 && p.isCaptain).length - pickedCharacters.filter(c => c.teamId === 2).length)" 
+                                    :key="`empty-pick-2-${n}`"
+                                    class="empty-pick"
+                                  >
+                                    <div class="empty-player"></div>
+                                    <div>等待选择</div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <!-- 公共玩家池 -->
+                          <div class="common-players-pool">
+                            <div class="pool-header">
+                              <h3>待选玩家</h3>
+                            </div>
+                            <div class="pool-players">
+                              <div 
+                                v-for="player in characters.filter(c => !pickedCharacters.some(p => p.characterId === c.id))" 
+                                :key="player.id"
+                                class="pool-player"
+                                :class="{'selectable': pickingPhase.currentTeam === userTeamId && isCaptain}"
+                                @click="isCaptain && pickingPhase.currentTeam === userTeamId && pickPlayer(player)"
+                              >
+                                <img :src="player.avatar" :alt="player.name" class="pool-player-avatar">
+                                <div class="pool-player-name">{{ player.name }}</div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <!-- 提示信息 -->
+                        <div v-if="isCaptain && pickingPhase.currentTeam === userTeamId" class="pick-message">
+                          请选择一名玩家加入您的队伍
+                        </div>
+                        <div v-else-if="isCaptain" class="pick-message">
+                          请等待对方队长进行选择
+                        </div>
+                        <div v-else class="pick-message">
+                          队长正在为队伍选择玩家，请耐心等待
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  </template>
+                  
+                  <!-- 选边阶段 -->
+                  <template v-else-if="room.status === 'side-picking'">
+                    <div class="room-body side-picking-phase">
+                      <div class="section-card side-picking-container">
+                        <div class="card-header">
+                          <h2 class="section-title">选择红蓝方</h2>
+                        </div>
+                        
+                        <div class="side-picking-content">
+                          <div class="side-picking-message">
+                            <p>选人阶段已完成，由一队队长选择红蓝方</p>
+                            
+                            <div v-if="isCaptain && userTeamId === 1" class="side-selection">
+                              <button 
+                                class="side-btn red-side" 
+                                @click="pickSide('red')"
+                              >
+                                选择红方
+                              </button>
+                              <button 
+                                class="side-btn blue-side" 
+                                @click="pickSide('blue')"
+                              >
+                                选择蓝方
+                              </button>
+                            </div>
+                            
+                            <div v-else class="waiting-for-side-pick">
+                              <p>等待一队队长选择...</p>
+                            </div>
+                          </div>
+                          
+                          <!-- 双方阵容展示 -->
+                          <div class="teams-composition">
+                            <!-- 一队已选择的角色 -->
+                            <div class="team-composition team-red">
+                              <h3>一队阵容</h3>
+                              <div class="team-characters">
+                                <div 
+                                  v-for="char in pickedCharacters.filter(c => c.teamId === 1)" 
+                                  :key="char.characterId"
+                                  class="team-character"
+                                >
+                                  <img :src="char.characterAvatar" :alt="char.characterName" class="character-avatar">
+                                  <div class="character-name">{{ char.characterName }}</div>
+                                </div>
+                              </div>
+                            </div>
+                            
+                            <!-- 二队已选择的角色 -->
+                            <div class="team-composition team-blue">
+                              <h3>二队阵容</h3>
+                              <div class="team-characters">
+                                <div 
+                                  v-for="char in pickedCharacters.filter(c => c.teamId === 2)" 
+                                  :key="char.characterId"
+                                  class="team-character"
+                                >
+                                  <img :src="char.characterAvatar" :alt="char.characterName" class="character-avatar">
+                                  <div class="character-name">{{ char.characterName }}</div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </template>
+                  
+                  <!-- 等待游戏开始界面 -->
+                  <template v-else-if="room.status === 'waiting-game'">
+                    <div class="room-body waiting-game-phase">
+                      <div class="section-card waiting-game-container">
+                        <div class="card-header">
+                          <h2 class="section-title">等待游戏开始</h2>
+                        </div>
+                        
+                        <div class="waiting-game-content">
+                          <div class="waiting-game-message">
+                            <p>
+                              一队已选择 {{ room.teams[0]?.side === 'red' ? '红方' : '蓝方' }}，
+                              二队将使用 {{ room.teams[0]?.side === 'red' ? '蓝方' : '红方' }}
+                            </p>
+                            <p>所有玩家请在游戏客户端中建立自定义房间，按照分配加入对应队伍</p>
+                            
+                            <div v-if="isCreator" class="start-game-section">
+                              <p>请在确认所有玩家已准备就绪后开始游戏</p>
+                              <el-button type="success" @click="startGame" class="start-game-btn">
+                                开始游戏
+                              </el-button>
+                            </div>
+                            
+                            <div v-else class="waiting-for-game-start">
+                              <p>等待房主开始游戏...</p>
+                            </div>
+                          </div>
+                          
+                          <!-- 双方阵容展示 -->
+                          <div class="teams-composition">
+                            <!-- 一队已选择的角色 -->
+                            <div class="team-composition" :class="room.teams[0]?.side === 'red' ? 'side-red' : 'side-blue'">
+                              <h3>
+                                一队阵容
+                                <span class="side-label">
+                                  {{ room.teams[0]?.side === 'red' ? '红方' : '蓝方' }}
+                                </span>
+                              </h3>
+                              <div class="team-characters">
+                                <div 
+                                  v-for="char in pickedCharacters.filter(c => c.teamId === 1)" 
+                                  :key="char.characterId"
+                                  class="team-character"
+                                >
+                                  <img :src="char.characterAvatar" :alt="char.characterName" class="character-avatar">
+                                  <div class="character-name">{{ char.characterName }}</div>
+                                </div>
+                              </div>
+                            </div>
+                            
+                            <!-- 二队已选择的角色 -->
+                            <div class="team-composition" :class="room.teams[0]?.side === 'red' ? 'side-blue' : 'side-red'">
+                              <h3>
+                                二队阵容
+                                <span class="side-label">
+                                  {{ room.teams[0]?.side === 'red' ? '蓝方' : '红方' }}
+                                </span>
+                              </h3>
+                              <div class="team-characters">
+                                <div 
+                                  v-for="char in pickedCharacters.filter(c => c.teamId === 2)" 
+                                  :key="char.characterId"
+                                  class="team-character"
+                                >
+                                  <img :src="char.characterAvatar" :alt="char.characterName" class="character-avatar">
+                                  <div class="character-name">{{ char.characterName }}</div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </template>
+                  
+                  <!-- 游戏中界面 -->
+                  <template v-else-if="room.status === 'gaming'">
+                    <div class="room-body gaming-phase">
+                      <div class="section-card gaming-container">
+                        <div class="card-header">
+                          <h2 class="section-title">游戏进行中</h2>
+                        </div>
+                        
+                        <div class="gaming-content">
+                          <div class="gaming-message">
+                            <p>游戏已开始，对局数据将在游戏结束后更新</p>
+                            <div class="game-timer">
+                              <div class="timer-label">游戏时长：</div>
+                              <div class="timer">25:30</div>
+                            </div>
+                          </div>
+                          
+                          <!-- 双方阵容展示 -->
+                          <div class="teams-composition">
+                            <!-- 一队已选择的角色 -->
+                            <div class="team-composition" :class="room.teams[0]?.side === 'red' ? 'side-red' : 'side-blue'">
+                              <h3>
+                                一队阵容
+                                <span class="side-label">
+                                  {{ room.teams[0]?.side === 'red' ? '红方' : '蓝方' }}
+                                </span>
+                              </h3>
+                              <div class="team-characters">
+                                <div 
+                                  v-for="char in pickedCharacters.filter(c => c.teamId === 1)" 
+                                  :key="char.characterId"
+                                  class="team-character"
+                                >
+                                  <img :src="char.characterAvatar" :alt="char.characterName" class="character-avatar">
+                                  <div class="character-name">{{ char.characterName }}</div>
+                                </div>
+                              </div>
+                            </div>
+                            
+                            <!-- 二队已选择的角色 -->
+                            <div class="team-composition" :class="room.teams[0]?.side === 'red' ? 'side-blue' : 'side-red'">
+                              <h3>
+                                二队阵容
+                                <span class="side-label">
+                                  {{ room.teams[0]?.side === 'red' ? '蓝方' : '红方' }}
+                                </span>
+                              </h3>
+                              <div class="team-characters">
+                                <div 
+                                  v-for="char in pickedCharacters.filter(c => c.teamId === 2)" 
+                                  :key="char.characterId"
+                                  class="team-character"
+                                >
+                                  <img :src="char.characterAvatar" :alt="char.characterName" class="character-avatar">
+                                  <div class="character-name">{{ char.characterName }}</div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </template>
+                </div>
                 
-                  <!-- 聊天区域移到主内容区 -->
+                <!-- 始终显示的聊天区域 -->
+                <div class="chat-wrapper">
                   <div class="section-card chat-container-main">
                     <div class="card-header">
                       <h2 class="section-title">聊天室</h2>
@@ -990,6 +1341,7 @@ const captainActionText = computed(() => {
                       </div>
                     </div>
                     
+                    <!-- 聊天输入框部分 -->
                     <div class="chat-input">
                       <input
                         v-model="chatInput"
@@ -1004,421 +1356,7 @@ const captainActionText = computed(() => {
                     </div>
                   </div>
                 </div>
-              </template>
-              
-              <!-- 选人阶段 -->
-              <template v-else-if="room.status === 'picking'">
-                <div class="room-body picking-phase">
-                  <div class="section-card picking-container">
-                    <div class="card-header">
-                      <h2 class="section-title">队员选择</h2>
-                      <div class="pick-status">
-                        当前回合: {{ pickingPhase.currentPick }}/{{ getTotalPickCount() }}
-                        ({{ pickingPhase.currentTeam === 1 ? '一队选择' : '二队选择' }})
-                      </div>
-                    </div>
-                    
-                    <div class="pick-content-container">
-                      <!-- 队伍区域 -->
-                      <div class="teams-container">
-                        <div class="team-group">
-                          <!-- 一队 -->
-                          <div class="team-red-section" :class="{'active-team': pickingPhase.currentTeam === 1}">
-                            <div class="team-info">
-                              <h3 class="team-name">一队</h3>
-                              <span v-if="pickingPhase.currentTeam === 1" class="current-pick-status">正在选人</span>
-                            </div>
-                            
-                            <div class="team-players-grid">
-                              <!-- 队长位置 -->
-                              <div 
-                                v-for="player in room.players.filter(p => p.teamId === 1 && p.isCaptain)" 
-                                :key="player.userId"
-                                class="team-captain"
-                              >
-                                <div class="captain-badge">队长</div>
-                                <img :src="player.avatar || 'https://placekitten.com/100/100'" alt="队长头像" class="captain-avatar">
-                                <div class="captain-name">{{ player.username }}</div>
-                              </div>
-                              
-                              <!-- 队员位置（已选择的玩家） -->
-                              <div 
-                                v-for="char in pickedCharacters.filter(c => c.teamId === 1)" 
-                                :key="char.characterId"
-                                class="picked-player"
-                              >
-                                <div class="pick-order">{{ char.pickOrder }}</div>
-                                <img :src="char.characterAvatar" :alt="char.characterName" class="picked-avatar">
-                                <div class="picked-name">{{ char.characterName }}</div>
-                              </div>
-                              
-                              <!-- 空位 -->
-                              <div 
-                                v-for="n in (5 - room.players.filter(p => p.teamId === 1 && p.isCaptain).length - pickedCharacters.filter(c => c.teamId === 1).length)" 
-                                :key="`empty-pick-1-${n}`"
-                                class="empty-pick"
-                              >
-                                <div class="empty-player"></div>
-                                <div>等待选择</div>
-                              </div>
-                            </div>
-                          </div>
-                          
-                          <!-- 二队 -->
-                          <div class="team-blue-section" :class="{'active-team': pickingPhase.currentTeam === 2}">
-                            <div class="team-info">
-                              <h3 class="team-name">二队</h3>
-                              <span v-if="pickingPhase.currentTeam === 2" class="current-pick-status">正在选人</span>
-                            </div>
-                            
-                            <div class="team-players-grid">
-                              <!-- 队长位置 -->
-                              <div 
-                                v-for="player in room.players.filter(p => p.teamId === 2 && p.isCaptain)" 
-                                :key="player.userId"
-                                class="team-captain"
-                              >
-                                <div class="captain-badge">队长</div>
-                                <img :src="player.avatar || 'https://placekitten.com/100/100'" alt="队长头像" class="captain-avatar">
-                                <div class="captain-name">{{ player.username }}</div>
-                              </div>
-                              
-                              <!-- 队员位置（已选择的玩家） -->
-                              <div 
-                                v-for="char in pickedCharacters.filter(c => c.teamId === 2)" 
-                                :key="char.characterId"
-                                class="picked-player"
-                              >
-                                <div class="pick-order">{{ char.pickOrder }}</div>
-                                <img :src="char.characterAvatar" :alt="char.characterName" class="picked-avatar">
-                                <div class="picked-name">{{ char.characterName }}</div>
-                              </div>
-                              
-                              <!-- 空位 -->
-                              <div 
-                                v-for="n in (5 - room.players.filter(p => p.teamId === 2 && p.isCaptain).length - pickedCharacters.filter(c => c.teamId === 2).length)" 
-                                :key="`empty-pick-2-${n}`"
-                                class="empty-pick"
-                              >
-                                <div class="empty-player"></div>
-                                <div>等待选择</div>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <!-- 公共玩家池 -->
-                      <div class="common-players-pool">
-                        <div class="pool-header">
-                          <h3>待选玩家</h3>
-                        </div>
-                        <div class="pool-players">
-                          <div 
-                            v-for="player in characters.filter(c => !pickedCharacters.some(p => p.characterId === c.id))" 
-                            :key="player.id"
-                            class="pool-player"
-                            :class="{'selectable': pickingPhase.currentTeam === userTeamId && isCaptain}"
-                            @click="isCaptain && pickingPhase.currentTeam === userTeamId && pickPlayer(player)"
-                          >
-                            <img :src="player.avatar" :alt="player.name" class="pool-player-avatar">
-                            <div class="pool-player-name">{{ player.name }}</div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <!-- 提示信息 -->
-                    <div v-if="isCaptain && pickingPhase.currentTeam === userTeamId" class="pick-message">
-                      请选择一名玩家加入您的队伍
-                    </div>
-                    <div v-else-if="isCaptain" class="pick-message">
-                      请等待对方队长进行选择
-                    </div>
-                    <div v-else class="pick-message">
-                      队长正在为队伍选择玩家，请耐心等待
-                    </div>
-                  </div>
-                  
-                  <!-- 聊天区域 - 保持与等待阶段一致 -->
-                  <div class="section-card chat-container-main">
-                    <div class="card-header">
-                      <h2 class="section-title">聊天室</h2>
-                    </div>
-                    
-                    <div class="chat-tabs">
-                      <div 
-                        class="chat-tab" 
-                        :class="{'active': activeChat === 'public'}"
-                        @click="switchChatChannel('public')"
-                      >
-                        公共聊天
-                      </div>
-                      <div 
-                        v-if="userTeamId === 1"
-                        class="chat-tab" 
-                        :class="{'active': activeChat === 'team1'}"
-                        @click="switchChatChannel('team1')"
-                      >
-                        一队聊天
-                      </div>
-                      <div 
-                        v-if="userTeamId === 2"
-                        class="chat-tab" 
-                        :class="{'active': activeChat === 'team2'}"
-                        @click="switchChatChannel('team2')"
-                      >
-                        二队聊天
-                      </div>
-                    </div>
-                    
-                    <div class="chat-messages">
-                      <div 
-                        v-for="msg in messages[activeChat]" 
-                        :key="msg.id"
-                        :class="['message', {'system-message': msg.userId === 'system'}]"
-                      >
-                        <template v-if="msg.userId !== 'system'">
-                          <img :src="'https://placekitten.com/80/80'" alt="头像" class="message-avatar">
-                          <div class="message-content">
-                            <div class="message-author">
-                              {{ msg.username }}
-                              <span class="message-time">{{ new Date(msg.time).toLocaleTimeString() }}</span>
-                            </div>
-                            <p>{{ msg.content }}</p>
-                          </div>
-                        </template>
-                        <template v-else>
-                          <div class="message-content">
-                            {{ msg.content }}
-                          </div>
-                        </template>
-                      </div>
-                    </div>
-                    
-                    <div class="chat-input">
-                      <input
-                        v-model="chatInput"
-                        placeholder="输入聊天信息..."
-                        maxlength="100"
-                        @keyup.enter="sendMessage"
-                      />
-                      <div class="chat-actions">
-                        <button class="btn-emoji">😊</button>
-                        <button class="btn-send" @click="sendMessage">发送</button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </template>
-              
-              <!-- 选边阶段 -->
-              <template v-else-if="room.status === 'side-picking'">
-                <div class="room-body side-picking-phase">
-                  <div class="section-card side-picking-container">
-                    <div class="card-header">
-                      <h2 class="section-title">选择红蓝方</h2>
-                    </div>
-                    
-                    <div class="side-picking-content">
-                      <div class="side-picking-message">
-                        <p>选人阶段已完成，由一队队长选择红蓝方</p>
-                        
-                        <div v-if="isCaptain && userTeamId === 1" class="side-selection">
-                          <button 
-                            class="side-btn red-side" 
-                            @click="pickSide('red')"
-                          >
-                            选择红方
-                          </button>
-                          <button 
-                            class="side-btn blue-side" 
-                            @click="pickSide('blue')"
-                          >
-                            选择蓝方
-                          </button>
-                        </div>
-                        
-                        <div v-else class="waiting-for-side-pick">
-                          <p>等待一队队长选择...</p>
-                        </div>
-                      </div>
-                      
-                      <!-- 双方阵容展示 -->
-                      <div class="teams-composition">
-                        <!-- 一队已选择的角色 -->
-                        <div class="team-composition team-red">
-                          <h3>一队阵容</h3>
-                          <div class="team-characters">
-                            <div 
-                              v-for="char in pickedCharacters.filter(c => c.teamId === 1)" 
-                              :key="char.characterId"
-                              class="team-character"
-                            >
-                              <img :src="char.characterAvatar" :alt="char.characterName" class="character-avatar">
-                              <div class="character-name">{{ char.characterName }}</div>
-                            </div>
-                          </div>
-                        </div>
-                        
-                        <!-- 二队已选择的角色 -->
-                        <div class="team-composition team-blue">
-                          <h3>二队阵容</h3>
-                          <div class="team-characters">
-                            <div 
-                              v-for="char in pickedCharacters.filter(c => c.teamId === 2)" 
-                              :key="char.characterId"
-                              class="team-character"
-                            >
-                              <img :src="char.characterAvatar" :alt="char.characterName" class="character-avatar">
-                              <div class="character-name">{{ char.characterName }}</div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </template>
-              
-              <!-- 等待游戏开始界面 -->
-              <template v-else-if="room.status === 'waiting-game'">
-                <div class="room-body waiting-game-phase">
-                  <div class="section-card waiting-game-container">
-                    <div class="card-header">
-                      <h2 class="section-title">等待游戏开始</h2>
-                    </div>
-                    
-                    <div class="waiting-game-content">
-                      <div class="waiting-game-message">
-                        <p>
-                          一队已选择 {{ room.teams[0]?.side === 'red' ? '红方' : '蓝方' }}，
-                          二队将使用 {{ room.teams[0]?.side === 'red' ? '蓝方' : '红方' }}
-                        </p>
-                        <p>所有玩家请在游戏客户端中建立自定义房间，按照分配加入对应队伍</p>
-                        
-                        <div v-if="isCreator" class="start-game-section">
-                          <p>请在确认所有玩家已准备就绪后开始游戏</p>
-                          <el-button type="success" @click="startGame" class="start-game-btn">
-                            开始游戏
-                          </el-button>
-                        </div>
-                        
-                        <div v-else class="waiting-for-game-start">
-                          <p>等待房主开始游戏...</p>
-                        </div>
-                      </div>
-                      
-                      <!-- 双方阵容展示 -->
-                      <div class="teams-composition">
-                        <!-- 一队已选择的角色 -->
-                        <div class="team-composition" :class="room.teams[0]?.side === 'red' ? 'side-red' : 'side-blue'">
-                          <h3>
-                            一队阵容
-                            <span class="side-label">
-                              {{ room.teams[0]?.side === 'red' ? '红方' : '蓝方' }}
-                            </span>
-                          </h3>
-                          <div class="team-characters">
-                            <div 
-                              v-for="char in pickedCharacters.filter(c => c.teamId === 1)" 
-                              :key="char.characterId"
-                              class="team-character"
-                            >
-                              <img :src="char.characterAvatar" :alt="char.characterName" class="character-avatar">
-                              <div class="character-name">{{ char.characterName }}</div>
-                            </div>
-                          </div>
-                        </div>
-                        
-                        <!-- 二队已选择的角色 -->
-                        <div class="team-composition" :class="room.teams[0]?.side === 'red' ? 'side-blue' : 'side-red'">
-                          <h3>
-                            二队阵容
-                            <span class="side-label">
-                              {{ room.teams[0]?.side === 'red' ? '蓝方' : '红方' }}
-                            </span>
-                          </h3>
-                          <div class="team-characters">
-                            <div 
-                              v-for="char in pickedCharacters.filter(c => c.teamId === 2)" 
-                              :key="char.characterId"
-                              class="team-character"
-                            >
-                              <img :src="char.characterAvatar" :alt="char.characterName" class="character-avatar">
-                              <div class="character-name">{{ char.characterName }}</div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </template>
-              
-              <!-- 游戏中界面 -->
-              <template v-else-if="room.status === 'gaming'">
-                <div class="room-body gaming-phase">
-                  <div class="section-card gaming-container">
-                    <div class="card-header">
-                      <h2 class="section-title">游戏进行中</h2>
-                    </div>
-                    
-                    <div class="gaming-content">
-                      <div class="gaming-message">
-                        <p>游戏已开始，对局数据将在游戏结束后更新</p>
-                        <div class="game-timer">
-                          <div class="timer-label">游戏时长：</div>
-                          <div class="timer">25:30</div>
-                        </div>
-                      </div>
-                      
-                      <!-- 双方阵容展示 -->
-                      <div class="teams-composition">
-                        <!-- 一队已选择的角色 -->
-                        <div class="team-composition" :class="room.teams[0]?.side === 'red' ? 'side-red' : 'side-blue'">
-                          <h3>
-                            一队阵容
-                            <span class="side-label">
-                              {{ room.teams[0]?.side === 'red' ? '红方' : '蓝方' }}
-                            </span>
-                          </h3>
-                          <div class="team-characters">
-                            <div 
-                              v-for="char in pickedCharacters.filter(c => c.teamId === 1)" 
-                              :key="char.characterId"
-                              class="team-character"
-                            >
-                              <img :src="char.characterAvatar" :alt="char.characterName" class="character-avatar">
-                              <div class="character-name">{{ char.characterName }}</div>
-                            </div>
-                          </div>
-                        </div>
-                        
-                        <!-- 二队已选择的角色 -->
-                        <div class="team-composition" :class="room.teams[0]?.side === 'red' ? 'side-blue' : 'side-red'">
-                          <h3>
-                            二队阵容
-                            <span class="side-label">
-                              {{ room.teams[0]?.side === 'red' ? '蓝方' : '红方' }}
-                            </span>
-                          </h3>
-                          <div class="team-characters">
-                            <div 
-                              v-for="char in pickedCharacters.filter(c => c.teamId === 2)" 
-                              :key="char.characterId"
-                              class="team-character"
-                            >
-                              <img :src="char.characterAvatar" :alt="char.characterName" class="character-avatar">
-                              <div class="character-name">{{ char.characterName }}</div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </template>
+              </div>
             </div>
           </div>
           
@@ -1763,43 +1701,59 @@ const captainActionText = computed(() => {
 
 .chat-input {
   display: flex;
+  flex-direction: row;
+  align-items: center;
   padding: 1rem;
+  background-color: rgba(30, 31, 45, 0.95);
   border-top: 1px solid rgba(255, 255, 255, 0.1);
+  position: relative;
+  z-index: 10;
+  margin: 0;
+  gap: 10px;
 }
 
 .chat-input input {
   flex: 1;
-  padding: 0.75rem 1rem;
-  background-color: rgba(0, 0, 0, 0.2);
+  background-color: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 8px;
+  border-radius: 20px;
+  padding: 10px 15px;
   color: #fff;
+  margin: 0;
+}
+
+.chat-input input:focus {
+  border-color: #ff9800;
+  outline: none;
 }
 
 .chat-actions {
   display: flex;
-  margin-left: 0.5rem;
+  gap: 5px;
 }
 
-.btn-emoji, .btn-send {
-  width: 2.5rem;
-  height: 2.5rem;
+.btn-emoji, 
+.btn-send {
+  min-width: 40px;
+  height: 36px;
   border-radius: 8px;
   border: none;
   background-color: rgba(0, 0, 0, 0.3);
-  color: #8b8fa3;
+  color: #fff;
   cursor: pointer;
-  transition: all 0.3s;
-  margin-left: 0.5rem;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .btn-send {
-  background-color: #5f79fc;
-  color: white;
+  background-color: #ff9800;
+  padding: 0 12px;
 }
 
-.btn-emoji:hover, .btn-send:hover {
-  transform: translateY(-2px);
+.btn-send:hover {
+  background-color: #f57c00;
 }
 
 /* 语音区域样式 */
@@ -1930,9 +1884,15 @@ const captainActionText = computed(() => {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
-  height: 100%;
-  overflow-y: auto;
   padding: 1.5rem;
+  min-height: 100%;
+}
+
+.picking-phase,
+.side-picking-phase,
+.waiting-game-phase,
+.gaming-phase {
+  padding: 0;
 }
 
 .section-card {
@@ -2374,118 +2334,101 @@ const captainActionText = computed(() => {
 }
 
 .chat-container-main {
-  flex: 2;
+  height: 100%;
   display: flex;
   flex-direction: column;
+  border-radius: 0;
+  box-shadow: none;
+  background-color: transparent;
 }
 
-/* 聊天区域样式 */
-.chat-tabs {
+.chat-wrapper .card-header {
+  padding: 12px 15px;
+  background-color: rgba(0, 0, 0, 0.2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.chat-wrapper .section-title {
   display: flex;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  margin-bottom: 10px;
+  align-items: center;
 }
 
-.chat-tab {
-  padding: 10px 15px;
-  cursor: pointer;
-  color: rgba(255, 255, 255, 0.7);
-  transition: all 0.2s;
-  border-bottom: 2px solid transparent;
+.chat-wrapper .section-title::before {
+  content: '💬';
+  margin-right: 8px;
+  font-size: 1.1rem;
 }
 
-.chat-tab.active {
-  color: #fff;
-  border-bottom: 2px solid #ff9800;
-}
-
-.chat-tab:hover {
-  background-color: rgba(255, 255, 255, 0.05);
-}
-
-.chat-messages {
+.chat-wrapper .chat-messages {
   flex: 1;
   overflow-y: auto;
-  padding: 10px;
+  padding: 15px;
+  background-color: rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+  margin: 10px;
+  min-height: 180px;
+  max-height: calc(100% - 130px);
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-height: 400px;
 }
 
-.message {
-  display: flex;
-  margin-bottom: 10px;
+.chat-wrapper .chat-input {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  padding: 12px !important;
+  background-color: rgba(30, 31, 45, 0.95) !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
+  position: absolute !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  z-index: 100 !important;
+  margin: 0 !important;
+  gap: 10px !important;
+  height: 70px !important;
 }
 
-.message-avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  margin-right: 10px;
-}
-
-.message-content {
-  flex: 1;
+.chat-wrapper .chat-input input {
+  width: 100%;
   background-color: rgba(255, 255, 255, 0.05);
-  padding: 10px;
-  border-radius: 8px;
-}
-
-.message-author {
-  font-weight: 500;
-  margin-bottom: 5px;
-  display: flex;
-  justify-content: space-between;
-}
-
-.message-time {
-  font-size: 0.8rem;
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.system-message .message-content {
-  background-color: rgba(255, 152, 0, 0.1);
-  color: #ff9800;
-  text-align: center;
-}
-
-.chat-input {
-  display: flex;
-  flex-direction: column;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  padding: 10px 0;
-}
-
-.chat-input input {
-  background-color: rgba(255, 255, 255, 0.05);
-  border: none;
-  border-radius: 4px;
-  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  padding: 10px 15px;
   color: #fff;
   margin-bottom: 10px;
+  transition: all 0.3s;
+  flex: 1;
 }
 
-.chat-actions {
+.chat-wrapper .chat-actions {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
+  gap: 5px;
 }
 
-.btn-emoji, .btn-send {
-  background-color: transparent;
+.chat-wrapper .btn-emoji, 
+.chat-wrapper .btn-send {
+  min-width: 40px;
+  height: 36px;
+  border-radius: 8px;
   border: none;
+  background-color: rgba(0, 0, 0, 0.3);
   color: #fff;
   cursor: pointer;
-  padding: 6px 12px;
-  border-radius: 4px;
   transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.btn-send {
+.chat-wrapper .btn-send {
   background-color: #ff9800;
+  padding: 0 12px;
 }
 
-.btn-send:hover {
+.chat-wrapper .btn-send:hover {
   background-color: #f57c00;
 }
 
@@ -2643,5 +2586,194 @@ const captainActionText = computed(() => {
     width: 50px;
     height: 50px;
   }
+}
+
+.content-main-wrapper {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.content-main {
+  flex: 1;
+  overflow-y: auto;
+  min-width: 0; /* 防止flex项目溢出 */
+  padding-bottom: 10px;
+}
+
+.chat-wrapper {
+  width: 100%;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 400px; /* 增加最小高度 */
+  max-height: 500px; /* 限制最大高度 */
+  background-color: rgba(0, 0, 0, 0.1);
+  position: relative; /* 添加相对定位 */
+  padding-bottom: 80px; /* 为输入框预留空间 */
+}
+
+.chat-wrapper .chat-tabs {
+  display: flex;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  margin-bottom: 10px;
+  background-color: rgba(30, 31, 45, 0.95);
+  z-index: 5;
+}
+
+.chat-wrapper .chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 15px;
+  background-color: rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+  margin: 10px;
+  min-height: 180px;
+  max-height: calc(100% - 130px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* 确保聊天输入框样式正确 */
+.chat-input {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  padding: 12px !important;
+  background-color: rgba(30, 31, 45, 0.95) !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
+  position: absolute !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  z-index: 100 !important;
+  margin: 0 !important;
+  gap: 10px !important;
+  height: 70px !important;
+}
+
+@media (max-width: 992px) {
+  .chat-wrapper {
+    min-height: 450px !important;
+    max-height: none !important;
+    padding-bottom: 70px !important;
+  }
+  
+  .chat-wrapper .chat-messages {
+    max-height: calc(100% - 80px) !important;
+    min-height: 180px !important;
+  }
+  
+  .chat-input {
+    height: 60px !important;
+  }
+}
+
+.chat-wrapper .chat-tab {
+  padding: 10px 15px;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.7);
+  transition: all 0.2s;
+  border-bottom: 2px solid transparent;
+}
+
+.chat-wrapper .chat-tab.active {
+  color: #fff;
+  border-bottom: 2px solid #ff9800;
+}
+
+.chat-wrapper .chat-tab:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.chat-wrapper .message {
+  display: flex;
+  margin-bottom: 10px;
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.chat-wrapper .message-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  margin-right: 10px;
+}
+
+.chat-wrapper .message-content {
+  flex: 1;
+  background-color: rgba(255, 255, 255, 0.05);
+  padding: 12px;
+  border-radius: 12px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+.chat-wrapper .message-author {
+  font-weight: 500;
+  margin-bottom: 5px;
+  display: flex;
+  justify-content: space-between;
+}
+
+.chat-wrapper .message-time {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.chat-wrapper .system-message .message-content {
+  background-color: rgba(255, 152, 0, 0.08);
+  color: #ff9800;
+  text-align: center;
+  font-weight: 500;
+  padding: 8px 15px;
+  border-radius: 20px;
+  box-shadow: none;
+  border: 1px solid rgba(255, 152, 0, 0.2);
+}
+
+.chat-input input {
+  flex: 1 !important;
+  background-color: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 20px !important;
+  padding: 8px 15px !important;
+  color: #fff !important;
+  margin: 0 !important;
+  height: 40px !important;
+}
+
+.chat-actions {
+  display: flex !important;
+  gap: 8px !important;
+  margin: 0 !important;
+}
+
+.btn-emoji, 
+.btn-send {
+  min-width: 40px !important;
+  height: 40px !important;
+  border-radius: 8px !important;
+  border: none !important;
+  color: #fff !important;
+  cursor: pointer !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.btn-emoji {
+  background-color: rgba(0, 0, 0, 0.3) !important;
+}
+
+.btn-send {
+  background-color: #ff9800 !important;
+  padding: 0 15px !important;
 }
 </style>
