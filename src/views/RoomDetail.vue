@@ -585,7 +585,11 @@ const toggleVoice = () => {
   
   // 添加系统消息
   if (hasJoinedVoice.value) {
-    addSystemMessage(`${userStore.username} 加入了语音聊天`)
+    if (room.value.status === 'waiting') {
+      addSystemMessage(`${userStore.username} 加入了语音聊天`)
+    } else {
+      addSystemMessage(`${userStore.username} 加入了${activeVoiceTeam.value === 1 ? '一' : '二'}队语音聊天`)
+    }
   } else {
     addSystemMessage(`${userStore.username} 离开了语音聊天`)
   }
@@ -678,6 +682,65 @@ const captainActionText = computed(() => {
   
   return ''
 })
+
+// 当前活跃的语音队伍
+const activeVoiceTeam = ref(0) // 0表示公共，1表示一队，2表示二队
+
+// 各队伍的语音参与者
+const teamVoiceParticipants = computed(() => {
+  if (!room.value || !hasJoinedVoice.value) return []
+  
+  // 根据当前选择的队伍语音频道过滤玩家
+  if (activeVoiceTeam.value === 0 || room.value.status === 'waiting') {
+    return room.value.players.filter(p => p.userId !== currentUserId.value && p.hasJoinedVoice)
+  } else {
+    return room.value.players.filter(p => 
+      p.userId !== currentUserId.value && 
+      p.hasJoinedVoice && 
+      p.teamId === activeVoiceTeam.value
+    )
+  }
+})
+
+// 切换语音队伍
+const switchVoiceTeam = (teamId) => {
+  activeVoiceTeam.value = teamId
+  
+  if (hasJoinedVoice.value) {
+    // 如果已经加入语音，则先退出
+    hasJoinedVoice.value = false
+    addSystemMessage(`${userStore.username} 离开了语音聊天`)
+    
+    // 然后重新加入新的队伍语音
+    setTimeout(() => {
+      hasJoinedVoice.value = true
+      if (teamId === 0) {
+        addSystemMessage(`${userStore.username} 加入了公共语音聊天`)
+      } else {
+        addSystemMessage(`${userStore.username} 加入了${teamId === 1 ? '一' : '二'}队语音聊天`)
+      }
+    }, 500)
+  }
+}
+
+// 监听用户队伍变化，自动切换到对应队伍的语音
+watch(userTeamId, (newTeamId) => {
+  if (newTeamId && room.value && room.value.status !== 'waiting') {
+    activeVoiceTeam.value = newTeamId
+  }
+})
+
+// 监听房间状态变化
+watch(() => room.value?.status, (newStatus) => {
+  if (newStatus === 'waiting') {
+    // 房间状态为等待中，切换到公共语音
+    activeVoiceTeam.value = 0
+  } else if (userTeamId.value) {
+    // 房间状态变为选人阶段或之后，且用户已经有队伍
+    activeVoiceTeam.value = userTeamId.value
+  }
+})
+
 </script>
 
 <template>
@@ -852,8 +915,8 @@ const captainActionText = computed(() => {
               <div class="voice-container">
                 <div class="card-header">
                   <h2 class="section-title">
-                    {{ isSpectator || room.status === 'waiting' ? '公共语音' : 
-                       userTeamId === 1 ? '一队语音' : '二队语音' }}
+                    {{ room.status === 'waiting' || activeVoiceTeam === 0 ? '公共语音' : 
+                       activeVoiceTeam === 1 ? '一队语音' : '二队语音' }}
                   </h2>
                   <div class="voice-controls">
                     <button 
@@ -866,15 +929,40 @@ const captainActionText = computed(() => {
                   </div>
                 </div>
                 
+                <!-- 选人阶段以后的状态显示队伍语音选择 -->
+                <div v-if="room.status !== 'waiting'" class="team-voice-tabs">
+                  <div 
+                    class="team-voice-tab" 
+                    :class="{'active': activeVoiceTeam === 0}"
+                    @click="switchVoiceTeam(0)"
+                  >
+                    公共语音
+                  </div>
+                  <div 
+                    class="team-voice-tab" 
+                    :class="{'active': activeVoiceTeam === 1}"
+                    @click="switchVoiceTeam(1)"
+                  >
+                    一队语音
+                  </div>
+                  <div 
+                    class="team-voice-tab" 
+                    :class="{'active': activeVoiceTeam === 2}"
+                    @click="switchVoiceTeam(2)"
+                  >
+                    二队语音
+                  </div>
+                </div>
+                
                 <div class="voice-participants">
                   <div class="voice-participant" :class="{'speaking': hasJoinedVoice}">
                     <img :src="userStore.avatar || 'https://placekitten.com/90/90'" alt="您的头像" class="voice-avatar">
                     <span class="participant-name">{{ userStore.username }} (您)</span>
                     <div class="voice-indicator"></div>
                   </div>
-                  <div v-if="hasJoinedVoice" class="voice-participant speaking">
-                    <img src="https://placekitten.com/91/91" alt="参与者头像" class="voice-avatar">
-                    <span class="participant-name">用户2</span>
+                  <div v-for="participant in teamVoiceParticipants" :key="participant.userId" class="voice-participant speaking">
+                    <img :src="participant.avatar" :alt="participant.username" class="voice-avatar">
+                    <span class="participant-name">{{ participant.username }}</span>
                     <div class="voice-indicator"></div>
                   </div>
                 </div>
@@ -2775,5 +2863,32 @@ const captainActionText = computed(() => {
 .btn-send {
   background-color: #ff9800 !important;
   padding: 0 15px !important;
+}
+
+/* 在样式部分添加 */
+.team-voice-tabs {
+  display: flex;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  margin-bottom: 10px;
+}
+
+.team-voice-tab {
+  flex: 1;
+  padding: 8px 10px;
+  text-align: center;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.7);
+  transition: all 0.2s;
+  border-bottom: 2px solid transparent;
+}
+
+.team-voice-tab.active {
+  color: #fff;
+  border-bottom: 2px solid #ff9800;
+  background-color: rgba(255, 152, 0, 0.1);
+}
+
+.team-voice-tab:hover {
+  background-color: rgba(255, 255, 255, 0.05);
 }
 </style>
