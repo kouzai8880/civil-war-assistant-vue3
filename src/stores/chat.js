@@ -1,5 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { chatApi } from '../services/api'
+import { sendLobbyMessage, sendRoomMessage, getLobbyHistory, on, getSocket } from '../services/socket'
 
 /**
  * 聊天状态管理
@@ -16,6 +18,8 @@ export const useChatStore = defineStore('chat', () => {
   })
   const isVoiceEnabled = ref(false)
   const isMuted = ref(false)
+  const isLoading = ref(false)
+  const error = ref(null)
 
   // 计算属性
   const filteredMessages = computed(() => {
@@ -23,26 +27,81 @@ export const useChatStore = defineStore('chat', () => {
   })
 
   // 方法
-  // 发送消息
-  const sendMessage = (content, channel = activeChannel.value, type = 'text') => {
-    const message = {
-      id: Date.now().toString(),
-      userId: 'current-user', // 稍后会从用户状态中获取
-      username: '当前用户',
-      content,
-      channel,
-      type,
-      time: new Date().toISOString()
+  // 发送消息 - 大厅
+  const sendLobbyMsg = async (content, type = 'text') => {
+    isLoading.value = true
+    error.value = null
+    
+    try {
+      // 通过WebSocket发送消息
+      sendLobbyMessage(content, type)
+      
+      // 也通过API发送以确保消息被保存
+      await chatApi.sendLobbyMessage({ content, type })
+      
+      // 本地添加消息，给用户立即反馈
+      const message = {
+        id: Date.now().toString(),
+        content,
+        type,
+        timestamp: Date.now(),
+        isSending: false
+      }
+      
+      messages.value.push(message)
+      return message
+    } catch (err) {
+      error.value = err.message || '发送消息失败'
+      return null
+    } finally {
+      isLoading.value = false
     }
+  }
+
+  // 发送消息 - 房间
+  const sendRoomMsg = async (roomId, content, channel = activeChannel.value, type = 'text') => {
+    isLoading.value = true
+    error.value = null
     
-    messages.value.push(message)
-    
-    // 后续会集成WebSocket发送消息
-    return message
+    try {
+      // 通过WebSocket发送消息
+      sendRoomMessage(roomId, content, type)
+      
+      // 也通过API发送以确保消息被保存
+      const data = { content, type, channel }
+      if (channel.startsWith('team-')) {
+        data.teamId = parseInt(channel.replace('team-', ''))
+      }
+      
+      await chatApi.sendMessage(roomId, data)
+      
+      // 本地添加消息，给用户立即反馈
+      const message = {
+        id: Date.now().toString(),
+        roomId,
+        content,
+        channel,
+        type,
+        time: new Date().toISOString(),
+        isSending: false
+      }
+      
+      messages.value.push(message)
+      return message
+    } catch (err) {
+      error.value = err.message || '发送消息失败'
+      return null
+    } finally {
+      isLoading.value = false
+    }
   }
 
   // 接收消息
   const receiveMessage = (message) => {
+    // 处理重复消息
+    const isDuplicate = messages.value.some(m => m.id === message.id)
+    if (isDuplicate) return
+    
     messages.value.push(message)
     
     // 如果接收的消息不是当前活动频道，增加未读计数
@@ -71,31 +130,62 @@ export const useChatStore = defineStore('chat', () => {
     return isMuted.value
   }
 
-  // 加载历史消息
-  const loadHistory = async (roomId, channel) => {
+  // 加载大厅历史消息
+  const loadLobbyHistory = async (before = null, limit = 50) => {
+    isLoading.value = true
+    error.value = null
+    
     try {
-      // 模拟API调用，后续替换为真实接口
-      await new Promise(resolve => setTimeout(resolve, 500))
+      // 优先使用WebSocket获取历史
+      const history = await getLobbyHistory(before, limit)
       
-      // 模拟历史消息
-      const mockHistory = Array(20).fill().map((_, index) => ({
-        id: `msg-${index}`,
-        userId: `user-${index % 5 + 1}`,
-        username: `玩家 ${index % 5 + 1}`,
-        content: `这是一条测试消息 ${index + 1}`,
-        channel,
-        type: 'text',
-        time: new Date(Date.now() - (index * 60000)).toISOString()
-      }))
+      // 如果WebSocket获取失败，使用API
+      if (!history) {
+        const response = await chatApi.getLobbyChat({ before, limit })
+        
+        if (response.status === 'success') {
+          messages.value = response.data.messages
+          return response.data.messages
+        } else {
+          throw new Error(response.message || '获取聊天历史失败')
+        }
+      }
       
-      // 按时间排序，最新的消息在后面
-      mockHistory.sort((a, b) => new Date(a.time) - new Date(b.time))
-      
-      messages.value = [...mockHistory]
-      return mockHistory
-    } catch (error) {
-      console.error('加载历史消息失败:', error)
+      // 处理从WebSocket获取的历史
+      messages.value = history.messages || []
+      return messages.value
+    } catch (err) {
+      error.value = err.message || '加载历史消息失败'
       return []
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  // 加载房间历史消息
+  const loadRoomHistory = async (roomId, channel = 'public', before = null, limit = 50) => {
+    isLoading.value = true
+    error.value = null
+    
+    try {
+      const params = { channel, before, limit }
+      if (channel.startsWith('team-')) {
+        params.teamId = parseInt(channel.replace('team-', ''))
+      }
+      
+      const response = await chatApi.getRoomMessages(roomId, params)
+      
+      if (response.status === 'success') {
+        messages.value = response.data.messages
+        return response.data.messages
+      } else {
+        throw new Error(response.message || '获取聊天历史失败')
+      }
+    } catch (err) {
+      error.value = err.message || '加载历史消息失败'
+      return []
+    } finally {
+      isLoading.value = false
     }
   }
 
@@ -109,6 +199,50 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  // 设置聊天监听器
+  const setupChatListeners = () => {
+    // 监听大厅新消息
+    on('lobbyMessage', (data) => {
+      receiveMessage({
+        id: data.id,
+        userId: data.userId,
+        username: data.username,
+        avatar: data.avatar,
+        content: data.content,
+        type: data.type,
+        channel: 'public',
+        timestamp: data.timestamp
+      })
+    })
+    
+    // 监听房间新消息
+    on('roomMessage', (data) => {
+      receiveMessage({
+        id: data.id,
+        roomId: data.roomId,
+        userId: data.userId,
+        username: data.username,
+        avatar: data.avatar,
+        content: data.content,
+        type: data.type,
+        channel: data.teamId ? `team-${data.teamId}` : 'public',
+        time: data.time
+      })
+    })
+    
+    // 监听语音状态更新
+    on('voiceStateUpdate', (data) => {
+      console.log('语音状态更新:', data)
+      // 这里可以添加语音状态更新的处理逻辑
+    })
+    
+    // 监听静音状态更新
+    on('voiceMuteUpdate', (data) => {
+      console.log('静音状态更新:', data)
+      // 这里可以添加静音状态更新的处理逻辑
+    })
+  }
+
   return {
     // 状态
     messages,
@@ -116,17 +250,22 @@ export const useChatStore = defineStore('chat', () => {
     unreadCount,
     isVoiceEnabled,
     isMuted,
+    isLoading,
+    error,
     
     // 计算属性
     filteredMessages,
     
     // 方法
-    sendMessage,
+    sendLobbyMsg,
+    sendRoomMsg,
     receiveMessage,
     switchChannel,
     toggleVoice,
     toggleMute,
-    loadHistory,
-    clearMessages
+    loadLobbyHistory,
+    loadRoomHistory,
+    clearMessages,
+    setupChatListeners
   }
 }) 

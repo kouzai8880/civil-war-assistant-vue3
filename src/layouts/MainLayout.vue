@@ -4,6 +4,19 @@ import { useRouter } from 'vue-router'
 import { useUserStore } from '../stores/user'
 import FriendsSidebar from '../components/FriendsSidebar.vue'
 
+// 常用的英雄头像列表，用于随机分配
+const championIcons = [
+  'Ahri', 'Annie', 'Ashe', 'Caitlyn', 'Darius', 
+  'Ezreal', 'Garen', 'Jinx', 'Lux', 'Malphite',
+  'Nami', 'Syndra', 'Thresh', 'Yasuo', 'Zed'
+]
+
+// 生成英雄头像URL
+const getChampionIcon = (index = 0) => {
+  const champion = championIcons[index % championIcons.length]
+  return `https://ddragon.leagueoflegends.com/cdn/13.12.1/img/champion/${champion}.png`
+}
+
 // 用户状态
 const userStore = useUserStore()
 const router = useRouter()
@@ -97,7 +110,7 @@ const logout = () => {
           
           <div class="user-dropdown">
             <div class="user-info" @click="toggleDropdown">
-              <img :src="avatar || 'https://placekitten.com/200/200'" alt="Avatar" class="user-avatar">
+              <img :src="avatar || getChampionIcon()" alt="Avatar" class="user-avatar">
               <span class="username">{{ username }}</span>
               <el-icon class="dropdown-icon"><ArrowDown /></el-icon>
             </div>

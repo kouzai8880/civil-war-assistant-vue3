@@ -5,6 +5,20 @@ import { useUserStore } from '../stores/user'
 const userStore = useUserStore()
 const isLoggedIn = computed(() => userStore.isLoggedIn)
 
+// 常用的英雄头像列表，用于随机分配
+const championIcons = [
+  'Ahri', 'Annie', 'Ashe', 'Caitlyn', 'Darius', 
+  'Ezreal', 'Garen', 'Jinx', 'Lux', 'Malphite',
+  'Nami', 'Syndra', 'Thresh', 'Yasuo', 'Zed',
+  'Akali', 'Blitzcrank', 'Draven', 'Ekko', 'Fiora'
+]
+
+// 生成英雄头像URL
+const getChampionIcon = (index = 0) => {
+  const champion = championIcons[index % championIcons.length]
+  return `https://ddragon.leagueoflegends.com/cdn/13.12.1/img/champion/${champion}.png`
+}
+
 // 侧边栏是否收起
 const isCollapsed = ref(true)
 
@@ -21,78 +35,78 @@ const showFriendRequestsModal = ref(false)
 // 好友请求数量
 const friendRequestsCount = ref(2)
 
-// 好友列表数据（模拟数据）
-const friends = ref({
-  online: [
-    {
-      id: 1,
-      name: '好友1',
-      avatar: 'https://placekitten.com/110/110',
-      status: '在房间中'
-    },
-    {
-      id: 2,
-      name: '好友2',
-      avatar: 'https://placekitten.com/111/111',
-      status: '空闲'
-    },
-    {
-      id: 3,
-      name: '好友3',
-      avatar: 'https://placekitten.com/112/112',
-      status: '游戏中'
-    }
-  ],
-  offline: [
-    {
-      id: 4,
-      name: '好友4',
-      avatar: 'https://placekitten.com/113/113',
-      status: '3小时前在线'
-    },
-    {
-      id: 5,
-      name: '好友5',
-      avatar: 'https://placekitten.com/114/114',
-      status: '1天前在线'
-    },
-    {
-      id: 6,
-      name: '好友6',
-      avatar: 'https://placekitten.com/115/115',
-      status: '12小时前在线'
-    }
-  ]
-})
+// 在线好友
+const onlineFriends = ref([
+  {
+    id: 1,
+    name: '好友1',
+    avatar: getChampionIcon(0),
+    status: '在房间中'
+  },
+  {
+    id: 2,
+    name: '好友2',
+    avatar: getChampionIcon(1),
+    status: '空闲'
+  },
+  {
+    id: 3,
+    name: '好友3',
+    avatar: getChampionIcon(2),
+    status: '游戏中'
+  }
+])
 
-// 好友请求列表
-const friendRequests = ref([
+// 离线好友
+const offlineFriends = ref([
+  {
+    id: 4,
+    name: '好友4',
+    avatar: getChampionIcon(3),
+    status: '3小时前在线'
+  },
+  {
+    id: 5,
+    name: '好友5',
+    avatar: getChampionIcon(4),
+    status: '1天前在线'
+  },
+  {
+    id: 6,
+    name: '好友6',
+    avatar: getChampionIcon(5),
+    status: '12小时前在线'
+  }
+])
+
+// 通知
+const notifications = ref([
   {
     id: 1,
     name: '打野高手',
-    avatar: 'https://placekitten.com/125/125',
+    avatar: getChampionIcon(15),
     time: '2小时前'
   },
   {
     id: 2,
     name: '辅助大神',
-    avatar: 'https://placekitten.com/126/126',
+    avatar: getChampionIcon(16),
     time: '5小时前'
   }
 ])
 
-// 玩家搜索结果列表
-const searchResults = ref([
+// 推荐好友
+const recommendedFriends = ref([
   {
     id: 1,
     name: '峡谷大师',
-    avatar: 'https://placekitten.com/120/120',
+    avatar: getChampionIcon(10),
     level: 120
   },
   {
     id: 2,
     name: '峡谷王者',
-    avatar: 'https://placekitten.com/121/121',
+    avatar: getChampionIcon(11),
     level: 150
   }
 ])
@@ -201,11 +215,11 @@ onMounted(() => {
         <!-- 在线好友 -->
         <div class="friends-category">
           <div class="category-header" @click="toggleOnlineFriends">
-            <span>在线好友 ({{ friends.online.length }})</span>
+            <span>在线好友 ({{ onlineFriends.length }})</span>
             <button class="btn-icon category-toggle">{{ isOnlineFriendsExpanded ? '-' : '+' }}</button>
           </div>
           <div class="category-items" v-show="isOnlineFriendsExpanded">
-            <div v-for="friend in friends.online" :key="friend.id" class="friend-item online">
+            <div v-for="friend in onlineFriends" :key="friend.id" class="friend-item online">
               <img :src="friend.avatar" :alt="friend.name" class="friend-avatar">
               <div class="friend-info">
                 <span class="friend-name">{{ friend.name }}</span>
@@ -222,11 +236,11 @@ onMounted(() => {
         <!-- 离线好友 -->
         <div class="friends-category">
           <div class="category-header" @click="toggleOfflineFriends">
-            <span>离线好友 ({{ friends.offline.length }})</span>
+            <span>离线好友 ({{ offlineFriends.length }})</span>
             <button class="btn-icon category-toggle">{{ isOfflineFriendsExpanded ? '-' : '+' }}</button>
           </div>
           <div class="category-items" v-show="isOfflineFriendsExpanded">
-            <div v-for="friend in friends.offline" :key="friend.id" class="friend-item offline">
+            <div v-for="friend in offlineFriends" :key="friend.id" class="friend-item offline">
               <img :src="friend.avatar" :alt="friend.name" class="friend-avatar">
               <div class="friend-info">
                 <span class="friend-name">{{ friend.name }}</span>
@@ -258,7 +272,7 @@ onMounted(() => {
             <input type="text" class="form-input" placeholder="搜索玩家...">
           </div>
           <div class="search-results">
-            <div v-for="player in searchResults" :key="player.id" class="search-result-item">
+            <div v-for="player in recommendedFriends" :key="player.id" class="search-result-item">
               <img :src="player.avatar" :alt="player.name" class="player-avatar">
               <div class="player-info">
                 <span class="player-name">{{ player.name }}</span>
@@ -280,7 +294,7 @@ onMounted(() => {
         </div>
         <div class="modal-content">
           <div class="request-list">
-            <div v-for="request in friendRequests" :key="request.id" class="request-item">
+            <div v-for="request in notifications" :key="request.id" class="request-item">
               <img :src="request.avatar" :alt="request.name" class="player-avatar">
               <div class="request-info">
                 <span class="player-name">{{ request.name }}</span>

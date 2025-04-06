@@ -1,336 +1,333 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { roomApi } from '../services/api'
+import { useUserStore } from './user'
 
 /**
- * 房间状态管理
- * 处理房间创建、加入、状态更新等功能
+ * 房间管理Store
+ * 处理房间列表和房间详情的状态管理
  */
 export const useRoomStore = defineStore('room', () => {
   // 状态
-  const currentRoom = ref(null)
   const rooms = ref([])
-  const myRooms = ref([])
-  const isLoading = ref(false)
+  const currentRoom = ref(null)
+  const loading = ref(false)
   const error = ref(null)
+  const pagination = ref({
+    total: 0,
+    current: 1,
+    pageSize: 12
+  })
+
+  // 用户store
+  const userStore = useUserStore()
 
   // 计算属性
-  const isRoomFull = computed(() => 
-    currentRoom.value?.players?.length >= (currentRoom.value?.playerCount || 10)
-  )
-  
-  const readyPlayers = computed(() => 
-    currentRoom.value?.players?.filter(p => p.status === 'ready') || []
-  )
-  
-  const isAllReady = computed(() => 
-    readyPlayers.value.length === currentRoom.value?.players?.length &&
-    currentRoom.value?.players?.length > 0
-  )
+  const isInRoom = computed(() => Boolean(currentRoom.value))
+  const isRoomOwner = computed(() => {
+    if (!currentRoom.value || !userStore.userId) return false
+    return currentRoom.value.ownerId === userStore.userId
+  })
 
   // 方法
   // 获取房间列表
-  const fetchRooms = async () => {
-    isLoading.value = true
+  const fetchRooms = async (params = {}) => {
+    loading.value = true
     error.value = null
     
     try {
-      // 模拟API调用，后续替换为真实接口
-      await new Promise(resolve => setTimeout(resolve, 1000))
+      const response = await roomApi.getRoomList(params)
       
-      // 模拟数据
-      rooms.value = Array(10).fill().map((_, index) => ({
-        id: `room-${index + 1}`,
-        name: `测试房间 ${index + 1}`,
-        creatorId: 'user-1',
-        status: ['waiting', 'picking', 'gaming', 'ended'][Math.floor(Math.random() * 4)],
-        playerCount: 10,
-        teamCount: 2,
-        createTime: new Date(Date.now() - Math.random() * 8640000).toISOString(),
-        players: Array(Math.floor(Math.random() * 11)).fill().map((_, idx) => ({
-          userId: `user-${idx + 1}`,
-          status: ['online', 'ready'][Math.floor(Math.random() * 2)]
-        }))
-      }))
-      
-      return rooms.value
-    } catch (err) {
-      error.value = err.message || '获取房间列表失败'
-      return []
-    } finally {
-      isLoading.value = false
-    }
-  }
-
-  // 获取我的房间
-  const fetchMyRooms = async (userId) => {
-    isLoading.value = true
-    error.value = null
-    
-    try {
-      // 模拟API调用，后续替换为真实接口
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      
-      // 模拟数据 - 筛选创建者为当前用户的房间
-      myRooms.value = Array(3).fill().map((_, index) => ({
-        id: `my-room-${index + 1}`,
-        name: `我的房间 ${index + 1}`,
-        creatorId: userId,
-        status: ['waiting', 'gaming'][Math.floor(Math.random() * 2)],
-        playerCount: 10,
-        teamCount: 2,
-        createTime: new Date(Date.now() - Math.random() * 8640000).toISOString(),
-        players: Array(Math.floor(Math.random() * 11)).fill().map((_, idx) => ({
-          userId: idx === 0 ? userId : `user-${idx + 1}`,
-          status: ['online', 'ready'][Math.floor(Math.random() * 2)]
-        }))
-      }))
-      
-      return myRooms.value
-    } catch (err) {
-      error.value = err.message || '获取我的房间失败'
-      return []
-    } finally {
-      isLoading.value = false
-    }
-  }
-
-  // 获取房间详情
-  const fetchRoomDetail = async (roomId) => {
-    isLoading.value = true
-    error.value = null
-    
-    try {
-      // 模拟API调用，后续替换为真实接口
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      
-      // 模拟数据
-      currentRoom.value = {
-        id: roomId,
-        name: `房间 ${roomId}`,
-        creatorId: 'user-1',
-        password: '',
-        gameType: 'LOL',
-        playerCount: 10,
-        teamCount: 2,
-        pickMode: '12221',
-        status: 'waiting',
-        createTime: new Date().toISOString(),
-        players: Array(5).fill().map((_, idx) => ({
-          userId: `user-${idx + 1}`,
-          username: `玩家 ${idx + 1}`,
-          teamId: idx < 2 ? 1 : 2,
-          isCaptain: idx === 0 || idx === 2,
-          status: ['online', 'ready'][Math.floor(Math.random() * 2)]
-        })),
-        teams: [
-          {
-            id: 1,
-            name: '红队',
-            side: 'none',
-            captainId: 'user-1'
-          },
-          {
-            id: 2,
-            name: '蓝队',
-            side: 'none',
-            captainId: 'user-3'
-          }
-        ]
+      if (response.status === 'success') {
+        // 修正：API返回的是 {data: {rooms: []}} 结构
+        const roomsData = response.data?.rooms || response.data || []
+        rooms.value = roomsData
+        
+        // 更新分页信息
+        if (response.meta) {
+          pagination.value.total = response.meta.total || roomsData.length
+          pagination.value.current = response.meta.page || 1
+          pagination.value.pageSize = response.meta.limit || 20
+        } else {
+          pagination.value.total = roomsData.length
+        }
+        
+        console.log('获取房间列表成功，数量:', roomsData.length, roomsData)
+        return roomsData
+      } else {
+        throw new Error(response.message || '获取房间列表失败')
       }
-      
-      return currentRoom.value
     } catch (err) {
-      error.value = err.message || '获取房间详情失败'
-      return null
+      console.error('获取房间列表失败:', err)
+      error.value = err.message || '获取房间列表失败，请稍后重试'
+      return []
     } finally {
-      isLoading.value = false
+      loading.value = false
+    }
+  }
+
+  // 获取我的房间列表
+  const fetchMyRooms = async (params = {}) => {
+    loading.value = true
+    error.value = null
+    
+    try {
+      // 使用当前登录用户的token
+      const response = await roomApi.getUserRooms(params)
+      
+      if (response.status === 'success') {
+        // 修正：获取正确的房间数据结构
+        const userRooms = response.data?.rooms || response.data || []
+        
+        console.log('获取我的房间成功，数量:', userRooms.length, userRooms)
+        return userRooms
+      } else {
+        throw new Error(response.message || '获取我的房间失败')
+      }
+    } catch (err) {
+      console.error('获取我的房间失败:', err)
+      error.value = err.message || '获取我的房间失败，请稍后重试'
+      return []
+    } finally {
+      loading.value = false
     }
   }
 
   // 创建房间
   const createRoom = async (roomData) => {
-    isLoading.value = true
+    if (!userStore.isLoggedIn) {
+      error.value = '请先登录'
+      return null
+    }
+    
+    loading.value = true
     error.value = null
     
     try {
-      // 模拟API调用，后续替换为真实接口
-      await new Promise(resolve => setTimeout(resolve, 1000))
+      console.log('准备创建房间，数据:', roomData)
       
-      // 模拟创建成功
-      const newRoom = {
-        id: `room-${Date.now()}`,
+      // 确保必要字段存在
+      const apiRoomData = {
         name: roomData.name,
-        creatorId: roomData.creatorId,
-        password: roomData.password || '',
         gameType: roomData.gameType || 'LOL',
         playerCount: roomData.playerCount || 10,
-        teamCount: roomData.teamCount || 2,
-        pickMode: roomData.pickMode || '12221',
-        status: 'waiting',
-        createTime: new Date().toISOString(),
-        players: [{
-          userId: roomData.creatorId,
-          username: roomData.creatorName,
-          teamId: null,
-          isCaptain: false,
-          status: 'online'
-        }],
-        teams: [
-          {
-            id: 1,
-            name: '红队',
-            side: 'none',
-            captainId: null
-          },
-          {
-            id: 2,
-            name: '蓝队',
-            side: 'none',
-            captainId: null
-          }
-        ]
+        pickMode: roomData.pickMode || 'random',
+        description: roomData.description || '',
+        password: roomData.password || ''
       }
       
-      currentRoom.value = newRoom
-      rooms.value.unshift(newRoom)
-      myRooms.value.unshift(newRoom)
+      const response = await roomApi.createRoom(apiRoomData)
       
-      return newRoom
+      if (response.status === 'success' && response.data) {
+        console.log('房间创建成功, 服务器返回:', response.data)
+        
+        // 创建成功后自动设置为当前房间
+        const roomInfo = response.data.room || response.data
+        currentRoom.value = roomInfo
+        
+        // 添加到房间列表
+        if (rooms.value && rooms.value.length > 0) {
+          rooms.value = [roomInfo, ...rooms.value]
+        }
+        
+        return roomInfo
+      } else {
+        throw new Error(response.message || '创建房间失败')
+      }
     } catch (err) {
-      error.value = err.message || '创建房间失败'
+      console.error('创建房间失败:', err)
+      error.value = err.message || '创建房间失败，请稍后重试'
       return null
     } finally {
-      isLoading.value = false
+      loading.value = false
+    }
+  }
+
+  // 获取房间详情
+  const fetchRoomDetail = async (roomId) => {
+    if (!roomId) {
+      console.error('获取房间详情失败: 缺少roomId参数')
+      error.value = '无效的房间ID'
+      return null
+    }
+    
+    loading.value = true
+    error.value = null
+    
+    try {
+      console.log(`获取房间详情: 正在获取房间 ${roomId} 的信息`)
+      const response = await roomApi.getRoomDetail(roomId)
+      
+      if (response.status === 'success' && response.data) {
+        // 检查是否有房间数据
+        console.log('房间详情获取成功, 原始数据:', response.data)
+        
+        // 确保数据的格式一致性
+        const roomData = {
+          ...response.data,
+          players: response.data.players || [],
+          teams: response.data.teams || [],
+          spectators: response.data.spectators || [],
+          messages: response.data.messages || []
+        }
+        
+        console.log('房间详情处理后数据:', roomData)
+        currentRoom.value = roomData
+        return roomData
+      } else {
+        throw new Error(response.message || '获取房间详情失败：服务器返回错误')
+      }
+    } catch (err) {
+      console.error('获取房间详情失败:', err)
+      error.value = err.message || '获取房间详情失败，请稍后重试'
+      currentRoom.value = null
+      return null
+    } finally {
+      loading.value = false
     }
   }
 
   // 加入房间
-  const joinRoom = async (roomId, userData) => {
-    isLoading.value = true
+  const joinRoom = async (roomId, teamPreference) => {
+    if (!userStore.isLoggedIn) {
+      error.value = '请先登录'
+      return false
+    }
+    
+    loading.value = true
     error.value = null
     
     try {
-      // 模拟API调用，后续替换为真实接口
-      await new Promise(resolve => setTimeout(resolve, 1000))
+      const response = await roomApi.joinRoom(roomId, {
+        userId: userStore.userId,
+        username: userStore.username,
+        teamPreference
+      })
       
-      // 查找房间
-      await fetchRoomDetail(roomId)
-      
-      if (!currentRoom.value) {
-        throw new Error('房间不存在')
-      }
-      
-      if (isRoomFull.value) {
-        throw new Error('房间已满')
-      }
-      
-      // 添加玩家
-      const newPlayer = {
-        userId: userData.id,
-        username: userData.username,
-        teamId: null,
-        isCaptain: false,
-        status: 'online'
-      }
-      
-      currentRoom.value.players.push(newPlayer)
-      
-      return currentRoom.value
-    } catch (err) {
-      error.value = err.message || '加入房间失败'
-      return null
-    } finally {
-      isLoading.value = false
-    }
-  }
-
-  // 更新准备状态
-  const toggleReady = async (userId, isReady) => {
-    if (!currentRoom.value) return false
-    
-    try {
-      // 模拟API调用，后续替换为真实接口
-      await new Promise(resolve => setTimeout(resolve, 500))
-      
-      // 更新玩家状态
-      const playerIndex = currentRoom.value.players.findIndex(p => p.userId === userId)
-      
-      if (playerIndex >= 0) {
-        currentRoom.value.players[playerIndex].status = isReady ? 'ready' : 'online'
+      if (response.status === 'success') {
+        currentRoom.value = response.data
         return true
+      } else {
+        throw new Error(response.message || '加入房间失败')
       }
-      
-      return false
     } catch (err) {
-      error.value = err.message || '更新准备状态失败'
+      console.error('加入房间失败:', err)
+      error.value = err.message || '加入房间失败，请稍后重试'
       return false
+    } finally {
+      loading.value = false
     }
   }
 
   // 离开房间
-  const leaveRoom = async (userId) => {
-    if (!currentRoom.value) return false
+  const leaveRoom = async () => {
+    if (!currentRoom.value || !userStore.isLoggedIn) return false
+    
+    loading.value = true
+    error.value = null
     
     try {
-      // 模拟API调用，后续替换为真实接口
-      await new Promise(resolve => setTimeout(resolve, 500))
+      const response = await roomApi.leaveRoom(currentRoom.value.id, userStore.userId)
       
-      // 移除玩家
-      const playerIndex = currentRoom.value.players.findIndex(p => p.userId === userId)
-      
-      if (playerIndex >= 0) {
-        currentRoom.value.players.splice(playerIndex, 1)
-        
-        // 如果是房主，转移房主权限
-        if (currentRoom.value.creatorId === userId && currentRoom.value.players.length > 0) {
-          currentRoom.value.creatorId = currentRoom.value.players[0].userId
-        }
-        
-        // 如果房间没有玩家，关闭房间
-        if (currentRoom.value.players.length === 0) {
-          // TODO: 实现关闭房间逻辑
-        }
-        
+      if (response.status === 'success') {
+        currentRoom.value = null
         return true
+      } else {
+        throw new Error(response.message || '离开房间失败')
       }
-      
-      return false
     } catch (err) {
-      error.value = err.message || '离开房间失败'
+      console.error('离开房间失败:', err)
+      error.value = err.message || '离开房间失败，请稍后重试'
       return false
+    } finally {
+      loading.value = false
     }
   }
 
-  // 设置当前房间状态（直接更新）
-  const setCurrentRoom = (roomData) => {
-    if (roomData) {
-      currentRoom.value = roomData
-      return true
+  // 开始游戏
+  const startGame = async () => {
+    if (!currentRoom.value || !isRoomOwner.value) {
+      error.value = !isRoomOwner.value ? '只有房主才能开始游戏' : '没有加入房间'
+      return false
     }
-    return false
+    
+    loading.value = true
+    error.value = null
+    
+    try {
+      const response = await roomApi.startGame(currentRoom.value.id)
+      
+      if (response.status === 'success') {
+        // 更新房间状态
+        currentRoom.value = {
+          ...currentRoom.value,
+          status: 'in_progress'
+        }
+        return true
+      } else {
+        throw new Error(response.message || '开始游戏失败')
+      }
+    } catch (err) {
+      console.error('开始游戏失败:', err)
+      error.value = err.message || '开始游戏失败，请稍后重试'
+      return false
+    } finally {
+      loading.value = false
+    }
+  }
+
+  // 更新房间设置
+  const updateRoomSettings = async (settings) => {
+    if (!currentRoom.value || !isRoomOwner.value) {
+      error.value = !isRoomOwner.value ? '只有房主才能更改设置' : '没有加入房间'
+      return false
+    }
+    
+    loading.value = true
+    error.value = null
+    
+    try {
+      const response = await roomApi.updateRoomSettings(currentRoom.value.id, settings)
+      
+      if (response.status === 'success') {
+        // 更新房间信息
+        currentRoom.value = {
+          ...currentRoom.value,
+          ...response.data
+        }
+        return true
+      } else {
+        throw new Error(response.message || '更新房间设置失败')
+      }
+    } catch (err) {
+      console.error('更新房间设置失败:', err)
+      error.value = err.message || '更新房间设置失败，请稍后重试'
+      return false
+    } finally {
+      loading.value = false
+    }
   }
 
   return {
     // 状态
-    currentRoom,
     rooms,
-    myRooms,
-    isLoading,
+    currentRoom,
+    loading,
     error,
+    pagination,
     
     // 计算属性
-    isRoomFull,
-    readyPlayers,
-    isAllReady,
+    isInRoom,
+    isRoomOwner,
     
     // 方法
     fetchRooms,
     fetchMyRooms,
-    fetchRoomDetail,
     createRoom,
+    fetchRoomDetail,
     joinRoom,
-    toggleReady,
     leaveRoom,
-    setCurrentRoom
+    startGame,
+    updateRoomSettings
   }
 }) 

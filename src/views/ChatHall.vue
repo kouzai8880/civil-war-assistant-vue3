@@ -2,7 +2,21 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '../stores/user'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElSkeleton } from 'element-plus'
+
+// 常用的英雄头像列表，用于随机分配
+const championIcons = [
+  'Ahri', 'Annie', 'Ashe', 'Caitlyn', 'Darius', 
+  'Ezreal', 'Garen', 'Jinx', 'Lux', 'Malphite',
+  'Nami', 'Syndra', 'Thresh', 'Yasuo', 'Zed',
+  'Akali', 'Blitzcrank', 'Draven', 'Ekko', 'Fiora'
+]
+
+// 生成英雄头像URL
+const getChampionIcon = (index = 0) => {
+  const champion = championIcons[index % championIcons.length]
+  return `https://ddragon.leagueoflegends.com/cdn/13.12.1/img/champion/${champion}.png`
+}
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -11,7 +25,7 @@ const userStore = useUserStore()
 const isLoggedIn = computed(() => userStore.isLoggedIn)
 const currentUser = computed(() => ({
   username: userStore.username,
-  avatar: userStore.avatar || 'https://placekitten.com/100/100'
+  avatar: userStore.avatar || getChampionIcon()
 }))
 
 // 频道相关
@@ -43,19 +57,19 @@ const onlineUsers = ref([
     group: '管理员',
     count: 2,
     users: [
-      { id: 'admin', name: '系统管理员', avatar: 'https://placekitten.com/120/120', status: 'online' },
-      { id: 'moderator', name: '频道主持人', avatar: 'https://placekitten.com/121/121', status: 'idle' }
+      { id: 'admin', name: '系统管理员', avatar: getChampionIcon(10), status: 'online' },
+      { id: 'moderator', name: '频道主持人', avatar: getChampionIcon(11), status: 'idle' }
     ]
   },
   {
     group: '在线玩家',
     count: 22,
     users: [
-      { id: 'player1', name: '大神玩家', avatar: 'https://placekitten.com/100/100', status: 'online' },
-      { id: 'player2', name: '英雄大师', avatar: 'https://placekitten.com/101/101', status: 'online' },
-      { id: 'player3', name: '中路法师', avatar: 'https://placekitten.com/102/102', status: 'dnd' },
-      { id: 'player4', name: '上单剑客', avatar: 'https://placekitten.com/103/103', status: 'online' },
-      { id: 'player5', name: 'ADC大神', avatar: 'https://placekitten.com/104/104', status: 'online' }
+      { id: 'player1', name: '大神玩家', avatar: getChampionIcon(0), status: 'online' },
+      { id: 'player2', name: '英雄大师', avatar: getChampionIcon(1), status: 'online' },
+      { id: 'player3', name: '中路法师', avatar: getChampionIcon(2), status: 'dnd' },
+      { id: 'player4', name: '上单剑客', avatar: getChampionIcon(3), status: 'online' },
+      { id: 'player5', name: 'ADC大神', avatar: getChampionIcon(4), status: 'online' }
     ]
   }
 ])
@@ -64,83 +78,93 @@ const onlineUsers = ref([
 const messages = ref([])
 const chatInput = ref('')
 const chatContainer = ref(null)
+const isLoading = ref(false)
 
 // 加载历史消息
 const loadMessages = (channelId) => {
   // 清空现有消息
   messages.value = []
   
+  // 设置加载状态
+  isLoading.value = true
+  
   // 模拟API调用获取消息
-  const mockMessages = [
-    {
-      type: 'system',
-      content: `欢迎来到${currentChannel.value.name}频道！请遵守聊天规则，文明交流。`,
-      time: formatTime(new Date())
-    }
-  ]
-  
-  if (channelId === 'announcement') {
-    mockMessages.push(
-      {
-        type: 'user',
-        userId: 'admin',
-        avatar: 'https://placekitten.com/120/120',
-        name: '系统管理员',
-        content: '内战助手已更新到最新版本！新增了聊天大厅功能和个人资料页面。',
-        time: formatTime(new Date(Date.now() - 15 * 60000))
-      },
-      {
-        type: 'user',
-        userId: 'player2',
-        avatar: 'https://placekitten.com/101/101',
-        name: '英雄大师',
-        content: '新版本体验很好，特别是聊天功能非常方便！',
-        time: formatTime(new Date(Date.now() - 12 * 60000))
-      },
-      {
-        type: 'user',
-        userId: 'admin',
-        avatar: 'https://placekitten.com/120/120',
-        name: '系统管理员',
-        content: '周末联赛将于本周六晚上8点开始，请各位玩家做好准备。',
-        time: formatTime(new Date(Date.now() - 10 * 60000))
-      },
-      {
-        type: 'user',
-        userId: 'player4',
-        avatar: 'https://placekitten.com/103/103',
-        name: '上单剑客',
-        content: '我已经准备好了！希望能找到一个好队伍。',
-        time: formatTime(new Date(Date.now() - 5 * 60000))
-      }
-    )
-  } else if (channelId === 'team') {
-    mockMessages.push(
-      {
-        type: 'user',
-        userId: 'player3',
-        avatar: 'https://placekitten.com/102/102',
-        name: '中路法师',
-        content: '有人组队打排位吗？钻石水平中单，可以打野。',
-        time: formatTime(new Date(Date.now() - 30 * 60000))
-      },
-      {
-        type: 'user',
-        userId: 'player5',
-        avatar: 'https://placekitten.com/104/104',
-        name: 'ADC大神',
-        content: '我是ADC，需要一个辅助，白金以上的来',
-        time: formatTime(new Date(Date.now() - 25 * 60000))
-      }
-    )
-  }
-  
-  messages.value = mockMessages
-  
-  // 添加一个延时，确保DOM更新后再滚动
   setTimeout(() => {
-    scrollToBottom()
-  }, 100)
+    const mockMessages = [
+      {
+        type: 'system',
+        content: `欢迎来到${currentChannel.value.name}频道！请遵守聊天规则，文明交流。`,
+        time: formatTime(new Date())
+      }
+    ]
+    
+    if (channelId === 'announcement') {
+      mockMessages.push(
+        {
+          type: 'user',
+          userId: 'admin',
+          avatar: getChampionIcon(10),
+          name: '系统管理员',
+          content: '内战助手已更新到最新版本！新增了聊天大厅功能和个人资料页面。',
+          time: formatTime(new Date(Date.now() - 15 * 60000))
+        },
+        {
+          type: 'user',
+          userId: 'player2',
+          avatar: getChampionIcon(1),
+          name: '英雄大师',
+          content: '新版本体验很好，特别是聊天功能非常方便！',
+          time: formatTime(new Date(Date.now() - 12 * 60000))
+        },
+        {
+          type: 'user',
+          userId: 'admin',
+          avatar: getChampionIcon(10),
+          name: '系统管理员',
+          content: '周末联赛将于本周六晚上8点开始，请各位玩家做好准备。',
+          time: formatTime(new Date(Date.now() - 10 * 60000))
+        },
+        {
+          type: 'user',
+          userId: 'player4',
+          avatar: getChampionIcon(3),
+          name: '上单剑客',
+          content: '我已经准备好了！希望能找到一个好队伍。',
+          time: formatTime(new Date(Date.now() - 5 * 60000))
+        }
+      )
+    } else if (channelId === 'team') {
+      mockMessages.push(
+        {
+          type: 'user',
+          userId: 'player3',
+          avatar: getChampionIcon(2),
+          name: '中路法师',
+          content: '有人组队打排位吗？钻石水平中单，可以打野。',
+          time: formatTime(new Date(Date.now() - 30 * 60000))
+        },
+        {
+          type: 'user',
+          userId: 'player5',
+          avatar: getChampionIcon(4),
+          name: 'ADC大神',
+          content: '我是ADC，需要一个辅助，白金以上的来',
+          time: formatTime(new Date(Date.now() - 25 * 60000))
+        }
+      )
+    }
+    
+    messages.value = mockMessages
+    
+    // 添加一个延时，确保DOM更新后再滚动
+    setTimeout(() => {
+      scrollToBottom()
+      // 结束加载状态，添加短暂延迟避免闪烁
+      setTimeout(() => {
+        isLoading.value = false
+      }, 300)
+    }, 100)
+  }, 500) // 模拟网络延迟
 }
 
 // 格式化时间
@@ -223,19 +247,22 @@ onMounted(() => {
         <button class="btn-icon">+</button>
       </div>
       <div class="channel-list">
-        <div v-for="category in channels" :key="category.category">
-          <div class="channel-category">{{ category.category }}</div>
-          <div 
-            v-for="channel in category.items" 
-            :key="channel.id"
-            :class="['channel-item', { active: currentChannel.id === channel.id }]"
-            @click="switchChannel(channel)"
-          >
-            <span class="channel-icon">{{ channel.icon }}</span>
-            <span class="channel-name">{{ channel.name }}</span>
-            <span v-if="channel.badge > 0" class="channel-badge">{{ channel.badge }}</span>
+        <el-skeleton v-if="isLoading" :rows="6" animated style="padding: 10px;" />
+        <template v-else>
+          <div v-for="category in channels" :key="category.category">
+            <div class="channel-category">{{ category.category }}</div>
+            <div 
+              v-for="channel in category.items" 
+              :key="channel.id"
+              :class="['channel-item', { active: currentChannel.id === channel.id }]"
+              @click="switchChannel(channel)"
+            >
+              <span class="channel-icon">{{ channel.icon }}</span>
+              <span class="channel-name">{{ channel.name }}</span>
+              <span v-if="channel.badge > 0" class="channel-badge">{{ channel.badge }}</span>
+            </div>
           </div>
-        </div>
+        </template>
       </div>
     </div>
     
@@ -256,7 +283,9 @@ onMounted(() => {
         </div>
       </div>
       <div class="chat-messages-container" ref="chatContainer">
+        <el-skeleton v-if="isLoading" :rows="6" animated style="padding: 20px;" />
         <div 
+          v-else
           v-for="(message, index) in messages" 
           :key="index"
           :class="['chat-message', { 'system-message': message.type === 'system' }]"
@@ -301,14 +330,17 @@ onMounted(() => {
         <span>在线用户 ({{ onlineUsers.reduce((total, group) => total + group.count, 0) }})</span>
       </div>
       <div class="user-list">
-        <div class="user-group" v-for="group in onlineUsers" :key="group.group">
-          <div class="user-group-name">{{ group.group }} ({{ group.count }})</div>
-          <div class="user-item" v-for="user in group.users" :key="user.id">
-            <div :class="['user-status', `status-${user.status}`]"></div>
-            <img :src="user.avatar" :alt="user.name" class="user-avatar">
-            <span class="user-name">{{ user.name }}</span>
+        <el-skeleton v-if="isLoading" :rows="8" animated style="padding: 10px;" />
+        <template v-else>
+          <div class="user-group" v-for="group in onlineUsers" :key="group.group">
+            <div class="user-group-name">{{ group.group }} ({{ group.count }})</div>
+            <div class="user-item" v-for="user in group.users" :key="user.id">
+              <div :class="['user-status', `status-${user.status}`]"></div>
+              <img :src="user.avatar" :alt="user.name" class="user-avatar">
+              <span class="user-name">{{ user.name }}</span>
+            </div>
           </div>
-        </div>
+        </template>
       </div>
     </div>
   </div>

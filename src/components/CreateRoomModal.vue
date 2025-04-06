@@ -1,10 +1,13 @@
 <script setup>
 import { ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElLoading } from 'element-plus'
 import { useRouter } from 'vue-router'
+import { useRoomStore } from '../stores/room'
 
 // 路由器实例
 const router = useRouter()
+// 房间store
+const roomStore = useRoomStore()
 
 // 接收参数
 const props = defineProps({
@@ -78,26 +81,77 @@ const closeModal = () => {
 }
 
 // 提交表单
-const submitForm = () => {
+const submitForm = async () => {
   // 简单表单验证
   if (!roomForm.value.name.trim()) {
     ElMessage.warning('请输入房间名称')
     return
   }
-
-  // 模拟API调用创建房间
-  setTimeout(() => {
-    const newRoomId = Math.floor(Math.random() * 10000) // 模拟生成房间ID
+  
+  // 显示加载状态
+  const loading = ElLoading.service({
+    lock: true,
+    text: '创建房间中...',
+    background: 'rgba(0, 0, 0, 0.7)'
+  })
+  
+  try {
+    // 根据表单数据格式化成API需要的格式
+    let apiRoomData = {
+      name: roomForm.value.name.trim(),
+      description: roomForm.value.description.trim(),
+      // 根据选择的游戏类型映射到API需要的值
+      gameType: roomForm.value.gameType === '英雄联盟' ? 'LOL' : 
+                roomForm.value.gameType === '云顶之弈' ? 'TFT' : 
+                roomForm.value.gameType === '无畏契约' ? 'VALORANT' : 'LOL',
+      // 转换玩家数量
+      playerCount: parseInt(roomForm.value.playerCount.split('人')[0]),
+      // 转换选人模式
+      pickMode: roomForm.value.pickMode.includes('随机分队') ? 'random' : 
+                roomForm.value.pickMode.includes('12211') ? '12211' : 
+                roomForm.value.pickMode.includes('12221') ? '12221' : '12211'
+    }
     
-    ElMessage.success('房间创建成功！')
-    emit('created', { ...roomForm.value, id: newRoomId })
-    closeModal()
+    // 如果设置了密码，添加hasPassword字段
+    if (roomForm.value.password.trim()) {
+      apiRoomData.password = roomForm.value.password.trim()
+      apiRoomData.hasPassword = true
+    } else {
+      apiRoomData.hasPassword = false
+    }
     
-    // 关闭模态框后延迟导航到新房间
-    setTimeout(() => {
-      router.push({ path: `/room/${newRoomId}` })
-    }, 500)
-  }, 800)
+    console.log('提交创建房间请求，数据:', apiRoomData)
+    
+    // 调用roomStore的createRoom方法
+    const createdRoom = await roomStore.createRoom(apiRoomData)
+    
+    // 关闭加载提示
+    loading.close()
+    
+    if (createdRoom && createdRoom.id) {
+      console.log('房间创建成功，准备导航，房间ID:', createdRoom.id)
+      ElMessage.success('房间创建成功！')
+      emit('created', createdRoom)
+      closeModal()
+      
+      // 添加延迟确保模态框关闭后再导航
+      setTimeout(() => {
+        router.push({ 
+          path: `/room/${createdRoom.id}`,
+          replace: false
+        })
+      }, 300)
+    } else {
+      console.error('创建房间失败: 未收到有效的房间信息')
+      ElMessage.error('创建房间失败: 未收到有效的房间信息')
+    }
+  } catch (error) {
+    // 关闭加载提示
+    loading.close()
+    
+    console.error('创建房间失败:', error)
+    ElMessage.error(error.message || '创建房间失败，请稍后重试')
+  }
 }
 
 // 监听点击事件，如果点击的是模态框外部，关闭模态框

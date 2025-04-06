@@ -57,6 +57,19 @@ const playerCountOptions = [
   { value: '4', label: '4人' },
 ]
 
+// 常用的英雄头像列表，用于随机分配
+const championIcons = [
+  'Ahri', 'Annie', 'Ashe', 'Caitlyn', 'Darius', 
+  'Ezreal', 'Garen', 'Jinx', 'Lux', 'Malphite',
+  'Nami', 'Syndra', 'Thresh', 'Yasuo', 'Zed'
+]
+
+// 生成英雄头像URL
+const getChampionIcon = (index = 0) => {
+  const champion = championIcons[index % championIcons.length]
+  return `https://ddragon.leagueoflegends.com/cdn/13.12.1/img/champion/${champion}.png`
+}
+
 // 是否显示创建对话框
 onMounted(() => {
   if (route.query.action === 'create') {
@@ -70,10 +83,13 @@ const loadRooms = async () => {
   isLoading.value = true
   try {
     const result = await roomStore.fetchRooms()
-    rooms.value = result
-    pagination.value.total = result.length // 这里假设接口返回的是该筛选条件下的所有房间
+    rooms.value = result || []
+    console.log('获取房间列表成功，数量:', rooms.value.length)
+    pagination.value.total = result?.length || 0 // 这里假设接口返回的是该筛选条件下的所有房间
   } catch (error) {
+    console.error('加载房间列表失败:', error)
     ElMessage.error('加载房间列表失败')
+    rooms.value = []
   } finally {
     isLoading.value = false
   }
@@ -116,10 +132,12 @@ const joinRoom = (room) => {
     return
   }
   
-  if (room.players.length >= room.playerCount) {
+  if (room.players && room.players.length >= room.playerCount) {
     ElMessage.warning('该房间已满，无法加入')
     return
   }
+  
+  console.log('加入房间:', room.id, room.name)
   
   router.push(`/room/${room.id}`)
 }
@@ -237,7 +255,7 @@ const getPageList = () => {
           <div class="room-card-info-item">
             <span class="info-label">创建者:</span>
             <div class="info-content">
-              <img :src="room.creatorAvatar || 'https://placekitten.com/100/100'" alt="创建者头像" class="player-avatar">
+              <img :src="room.creatorAvatar || getChampionIcon(10)" alt="创建者头像" class="player-avatar">
               <span>{{ room.creatorName || '未知玩家' }}</span>
             </div>
           </div>
@@ -258,7 +276,7 @@ const getPageList = () => {
           <div class="player-avatars">
             <img v-for="(player, index) in (room.players || []).slice(0, 5)" 
                  :key="index" 
-                 :src="player.avatar || `https://placekitten.com/${100 + index}/${100 + index}`" 
+                 :src="player.avatar || getChampionIcon(index)" 
                  alt="玩家头像" 
                  class="player-avatar">
             <span v-if="room.players && room.players.length > 5" class="more-players">+{{ room.players.length - 5 }}</span>

@@ -21,7 +21,7 @@ const currentUserId = computed(() => userStore.userId)
 
 // 用户是否已准备
 const isReady = computed(() => {
-  if (!room.value || !currentUserId.value) return false
+  if (!room.value || !currentUserId.value || !room.value.players) return false
   const currentPlayer = room.value.players.find(p => p.userId === currentUserId.value)
   return currentPlayer && currentPlayer.status === 'ready'
 })
@@ -34,27 +34,27 @@ const isCreator = computed(() => {
 
 // 用户是否是队长
 const isCaptain = computed(() => {
-  if (!room.value || !currentUserId.value) return false
+  if (!room.value || !currentUserId.value || !room.value.players) return false
   const currentPlayer = room.value.players.find(p => p.userId === currentUserId.value)
   return currentPlayer && currentPlayer.isCaptain
 })
 
 // 用户所在队伍ID
 const userTeamId = computed(() => {
-  if (!room.value || !currentUserId.value) return null
+  if (!room.value || !currentUserId.value || !room.value.players) return null
   const currentPlayer = room.value.players.find(p => p.userId === currentUserId.value)
   return currentPlayer ? currentPlayer.teamId : null
 })
 
 // 用户是否在观众席
 const isSpectator = computed(() => {
-  if (!room.value || !currentUserId.value) return true
+  if (!room.value || !currentUserId.value || !room.value.players) return true
   return !room.value.players.some(p => p.userId === currentUserId.value)
 })
 
 // 队伍是否已满
 const isTeamFull = computed(() => {
-  if (!room.value) return true
+  if (!room.value || !room.value.players) return true
   return room.value.players.length >= room.value.playerCount
 })
 
@@ -104,16 +104,32 @@ const teamSettingVisible = ref(false)
 // 是否已加入语音
 const hasJoinedVoice = ref(false)
 
+// 常用的英雄头像列表，用于随机分配给玩家
+const championIcons = [
+  'Ahri', 'Annie', 'Ashe', 'Caitlyn', 'Darius', 
+  'Ezreal', 'Garen', 'Jinx', 'Lux', 'Malphite',
+  'Nami', 'Syndra', 'Thresh', 'Yasuo', 'Zed',
+  'Akali', 'Ekko', 'Fiora', 'Irelia', 'Jhin',
+  'Kaisa', 'LeeSin', 'Lulu', 'MasterYi', 'Pyke',
+  'Riven', 'Sett', 'Vayne', 'Yone', 'Yuumi'
+]
+
+// 生成英雄头像URL
+const getChampionIcon = (index) => {
+  const champion = championIcons[index % championIcons.length]
+  return `https://ddragon.leagueoflegends.com/cdn/13.12.1/img/champion/${champion}.png`
+}
+
 // 模拟角色列表
 const characters = ref([
-  { id: 1, name: '玩家小明', avatar: 'https://placekitten.com/100/100' },
-  { id: 2, name: '玩家小红', avatar: 'https://placekitten.com/101/101' },
-  { id: 3, name: '玩家小刚', avatar: 'https://placekitten.com/102/102' },
-  { id: 4, name: '玩家小丽', avatar: 'https://placekitten.com/103/103' },
-  { id: 5, name: '玩家小华', avatar: 'https://placekitten.com/104/104' },
-  { id: 6, name: '玩家小芳', avatar: 'https://placekitten.com/105/105' },
-  { id: 7, name: '玩家小龙', avatar: 'https://placekitten.com/106/106' },
-  { id: 8, name: '玩家小雪', avatar: 'https://placekitten.com/107/107' },
+  { id: 1, name: '玩家小明', avatar: getChampionIcon(0) },
+  { id: 2, name: '玩家小红', avatar: getChampionIcon(1) },
+  { id: 3, name: '玩家小刚', avatar: getChampionIcon(2) },
+  { id: 4, name: '玩家小丽', avatar: getChampionIcon(3) },
+  { id: 5, name: '玩家小华', avatar: getChampionIcon(4) },
+  { id: 6, name: '玩家小芳', avatar: getChampionIcon(5) },
+  { id: 7, name: '玩家小龙', avatar: getChampionIcon(6) },
+  { id: 8, name: '玩家小雪', avatar: getChampionIcon(7) },
 ])
 
 // 已选择的玩家
@@ -134,6 +150,11 @@ const setRoomPhase = (phase) => {
         { id: 1, name: '一队', side: null },
         { id: 2, name: '二队', side: null }
       ]
+    }
+    
+    // 确保players数组已初始化
+    if (!updatedRoom.players) {
+      updatedRoom.players = [];
     }
     
     // 分配队长
@@ -172,6 +193,54 @@ const setRoomPhase = (phase) => {
         { id: 1, name: '一队', side: null },
         { id: 2, name: '二队', side: null }
       ]
+    }
+    
+    // 确保players数组已初始化
+    if (!updatedRoom.players) {
+      updatedRoom.players = [];
+    }
+    
+    // 确保当前用户是一队队长
+    let userIsTeamOneCaptain = false;
+    updatedRoom.players = updatedRoom.players.map(player => {
+      if (player.userId === currentUserId.value) {
+        player.teamId = 1; // 确保用户在一队
+        player.isCaptain = true; // 设置为队长
+        userIsTeamOneCaptain = true;
+      } else if (player.teamId === 1 && userIsTeamOneCaptain) {
+        player.isCaptain = false; // 确保一队只有一个队长
+      }
+      return player;
+    });
+    
+    // 如果用户不在玩家列表中，添加他们
+    if (!userIsTeamOneCaptain && currentUserId.value) {
+      if (!updatedRoom.players) {
+        updatedRoom.players = [];
+      }
+      
+      updatedRoom.players.push({
+        userId: currentUserId.value,
+        username: userStore.username,
+        avatar: userStore.avatar || getChampionIcon(8),
+        teamId: 1,
+        isCaptain: true,
+        status: 'ready'
+      });
+    }
+    
+    // 确保有一些玩家被选择了
+    if (pickedCharacters.value.length === 0) {
+      // 为两个队伍各添加几个角色
+      for (let i = 0; i < 4; i++) {
+        pickedCharacters.value.push({
+          characterId: characters.value[i].id,
+          characterName: characters.value[i].name,
+          characterAvatar: characters.value[i].avatar,
+          teamId: i < 2 ? 1 : 2,
+          pickOrder: i + 1
+        });
+      }
     }
     
     addSystemMessage('选边阶段开始，由一队队长选择红蓝方')
@@ -312,15 +381,33 @@ onMounted(async () => {
 
 // 加载房间详情
 const loadRoomDetail = async () => {
+  if (!roomId.value) {
+    console.error('无法加载房间：没有房间ID')
+    ElMessage.error('无法加载房间：没有房间ID')
+    router.push('/rooms')
+    return
+  }
+  
   isLoading.value = true
+  
   try {
-    await roomStore.fetchRoomDetail(roomId.value)
+    // 延迟一下，确保 isLoading 状态完全应用
+    await new Promise(resolve => setTimeout(resolve, 50));
     
-    if (!room.value) {
-      ElMessage.error('房间不存在')
-      router.push('/rooms')
-      return
+    console.log(`正在加载房间详情，ID: ${roomId.value}`)
+    const result = await roomStore.fetchRoomDetail(roomId.value)
+    
+    if (!result || !room.value) {
+      console.error('房间不存在或无法加载房间数据')
+      ElMessage.error('无法加载房间详情，可能不存在或已关闭')
+      // 延迟导航，给用户看到错误消息的时间
+      setTimeout(() => {
+        router.push('/rooms')
+      }, 1500);
+      return;
     }
+    
+    console.log('房间详情加载成功:', room.value)
     
     // 确保有观众列表
     if (!room.value.spectators) {
@@ -330,34 +417,83 @@ const loadRoomDetail = async () => {
     // 确保有队伍列表
     if (!room.value.teams) {
       room.value.teams = [
-        { id: 1, name: '一队', side: null },
-        { id: 2, name: '二队', side: null }
+        { id: 1, name: '一队', side: null, players: [] },
+        { id: 2, name: '二队', side: null, players: [] }
       ]
     }
     
-    // 确保当前用户在房间中，如果不在，添加到观众席
-    const currentPlayer = room.value.players.find(p => p.userId === currentUserId.value)
-    const currentSpectator = room.value.spectators.find(s => s.userId === currentUserId.value)
-    
-    if (!currentPlayer && !currentSpectator) {
-      // 将用户添加到观众席
-      addUserToSpectators()
+    // 确保玩家列表存在
+    if (!room.value.players) {
+      room.value.players = []
     }
+    
+    // 确保当前用户在房间中，如果不在，添加到观众席
+    if (currentUserId.value) {
+      const currentPlayer = room.value.players.find(p => p.userId === currentUserId.value)
+      const currentSpectator = room.value.spectators.find(s => s.userId === currentUserId.value)
+      
+      if (!currentPlayer && !currentSpectator) {
+        // 将用户添加到观众席
+        addUserToSpectators()
+      }
+    }
+    
+    // 如果房间状态为游戏中，但没有队伍信息，初始化队伍信息
+    if (room.value.status === 'in_progress' && (!room.value.teams || room.value.teams.length === 0)) {
+      // 初始化队伍数据
+      initializeTeamsData()
+    }
+    
   } catch (error) {
-    ElMessage.error('加载房间失败')
+    console.error('加载房间失败', error);
+    ElMessage.error(roomStore.error || '加载房间详情失败，请稍后重试')
+    
+    // 如果房间加载失败，返回到房间列表
+    setTimeout(() => {
+      router.push('/rooms')
+    }, 1500);
   } finally {
-    isLoading.value = false
+    // 延迟关闭加载状态，确保有足够的时间显示加载动画
+    setTimeout(() => {
+      isLoading.value = false
+    }, 500);
   }
+}
+
+// 初始化队伍数据
+const initializeTeamsData = () => {
+  if (!room.value) return;
+  
+  // 创建默认队伍
+  room.value.teams = [
+    { id: 1, name: '一队', side: '赤', players: [] },
+    { id: 2, name: '二队', side: '蓝', players: [] }
+  ];
+  
+  // 将玩家分配到队伍
+  if (room.value.players && room.value.players.length > 0) {
+    room.value.players.forEach(player => {
+      if (player.teamId === 1) {
+        room.value.teams[0].players.push(player);
+      } else if (player.teamId === 2) {
+        room.value.teams[1].players.push(player);
+      }
+    });
+  }
+  
+  console.log('已初始化队伍数据:', room.value.teams);
 }
 
 // 将用户添加到观众席
 const addUserToSpectators = async () => {
+  if (!room.value || !room.value.spectators || !userStore.userId) return
+
   try {
     // 创建用户数据
     const userData = {
       userId: userStore.userId,
       username: userStore.username,
-      avatar: userStore.avatar || 'https://placekitten.com/100/100'
+      avatar: userStore.avatar || getChampionIcon(8)
     }
     
     // 将用户添加到观众席
@@ -385,7 +521,7 @@ const joinRoom = async () => {
     const playerData = {
       userId: userStore.userId,
       username: userStore.username,
-      avatar: userStore.avatar || 'https://placekitten.com/100/100',
+      avatar: userStore.avatar || 'getChampionIcon(8)',
       status: 'not-ready',
       // 初始不分配到任何队伍
       teamId: null,
@@ -443,14 +579,30 @@ const checkAllReady = () => {
 
 // 开始选人
 const startPicking = async () => {
+  if (!room.value) {
+    console.error('无法开始选人：房间数据不存在')
+    ElMessage.error('房间数据不存在')
+    return
+  }
+  
+  if (!isCreator.value) {
+    console.error('无法开始选人：不是房主')
+    ElMessage.warning('只有房主可以开始选人')
+    return
+  }
+  
   if (!checkAllReady()) {
+    console.log('还有玩家未准备，无法开始')
     ElMessage.warning('还有玩家未准备')
     return
   }
   
   try {
+    console.log('开始选人阶段...')
     setRoomPhase('picking')
+    ElMessage.success('已进入选人阶段')
   } catch (error) {
+    console.error('开始选人失败', error)
     ElMessage.error('开始选人失败')
   }
 }
@@ -503,80 +655,201 @@ const pickSide = (side) => {
 
 // 开始游戏
 const startGame = async () => {
+  if (!room.value) {
+    console.error('无法开始游戏：房间数据不存在')
+    ElMessage.error('房间数据不存在')
+    return
+  }
+  
+  if (!isCreator.value) {
+    console.error('无法开始游戏：不是房主')
+    ElMessage.warning('只有房主可以开始游戏')
+    return
+  }
+  
+  // 检查两队是否有队员
+  if (!room.value.teams || room.value.teams.length < 2) {
+    console.error('无法开始游戏：队伍数据异常')
+    ElMessage.error('队伍数据异常，无法开始游戏')
+    return
+  }
+  
+  // 检查是否已选择红蓝方
+  if (!room.value.teams[0].side || !room.value.teams[1].side) {
+    console.error('无法开始游戏：尚未选择红蓝方')
+    ElMessage.warning('请先选择红蓝方')
+    return
+  }
+  
   try {
+    console.log('开始游戏...')
     setRoomPhase('gaming')
+    addSystemMessage('游戏开始！祝各位玩家游戏愉快')
+    ElMessage.success('游戏已开始')
   } catch (error) {
+    console.error('开始游戏失败', error)
     ElMessage.error('开始游戏失败')
   }
 }
 
 // 离开房间
 const leaveRoom = async () => {
+  if (!room.value) {
+    console.error('无法离开房间：房间数据不存在')
+    router.push('/rooms')
+    return
+  }
+  
+  if (!userStore.userId) {
+    console.error('无法离开房间：用户未登录')
+    router.push('/login')
+    return
+  }
+  
+  console.log(`${userStore.username} 正在离开房间...`)
+  
   try {
     // 如果是玩家，从玩家列表移除
-    const playerIndex = room.value.players.findIndex(p => p.userId === currentUserId.value)
-    if (playerIndex !== -1) {
-      room.value.players.splice(playerIndex, 1)
-      addSystemMessage(`${userStore.username} 离开了队伍`)
+    if (room.value.players) {
+      const playerIndex = room.value.players.findIndex(p => p.userId === userStore.userId)
+      if (playerIndex !== -1) {
+        room.value.players.splice(playerIndex, 1)
+        console.log(`已从玩家列表移除用户 ${userStore.username}`)
+        addSystemMessage(`${userStore.username} 离开了队伍`)
+      }
     }
     
     // 如果是观众，从观众列表移除
-    const spectatorIndex = room.value.spectators.findIndex(s => s.userId === currentUserId.value)
-    if (spectatorIndex !== -1) {
-      room.value.spectators.splice(spectatorIndex, 1)
+    if (room.value.spectators) {
+      const spectatorIndex = room.value.spectators.findIndex(s => s.userId === userStore.userId)
+      if (spectatorIndex !== -1) {
+        room.value.spectators.splice(spectatorIndex, 1)
+        console.log(`已从观众席移除用户 ${userStore.username}`)
+      }
     }
     
+    // 如果是房主且房间中还有其他玩家，将房主转移给第一个玩家
+    if (isCreator.value && room.value.players && room.value.players.length > 0) {
+      const newCreator = room.value.players[0]
+      room.value.creatorId = newCreator.userId
+      console.log(`房主已转移给 ${newCreator.username}`)
+      addSystemMessage(`房主已转移给 ${newCreator.username}`)
+    }
+    
+    console.log('成功离开房间')
     ElMessage.success('已离开房间')
     router.push('/rooms')
   } catch (error) {
+    console.error('离开房间失败', error)
     ElMessage.error('离开房间失败')
+    // 即使出错，仍然尝试返回房间列表
+    setTimeout(() => {
+      router.push('/rooms')
+    }, 1000)
   }
 }
 
 // 发送聊天消息
 const sendMessage = () => {
-  if (!chatInput.value.trim()) return
+  if (!chatInput.value.trim()) {
+    return
+  }
   
-  // 根据当前激活的聊天标签发送到对应频道
-  messages.value[activeChat.value].push({
-    id: Date.now(),
-    userId: currentUserId.value,
-    username: userStore.username,
-    content: chatInput.value,
-    time: new Date()
-  })
+  if (!room.value) {
+    console.error('无法发送消息：房间数据不存在')
+    ElMessage.error('房间数据不存在')
+    return
+  }
   
-  chatInput.value = ''
+  if (!userStore.userId) {
+    console.error('无法发送消息：用户未登录')
+    ElMessage.error('请先登录')
+    return
+  }
   
-  // 自动滚动到底部
-  nextTick(() => {
-    const chatBox = document.querySelector('.chat-messages')
-    if (chatBox) {
-      chatBox.scrollTop = chatBox.scrollHeight
+  // 确保消息对象已初始化
+  if (!messages.value[activeChat.value]) {
+    console.error(`聊天频道 ${activeChat.value} 不存在`)
+    messages.value[activeChat.value] = []
+  }
+  
+  try {
+    // 构建消息对象
+    const newMessage = {
+      id: Date.now(),
+      userId: userStore.userId,
+      username: userStore.username || '玩家',
+      content: chatInput.value.trim(),
+      time: new Date()
     }
-  })
+    
+    // 根据当前激活的聊天标签发送到对应频道
+    messages.value[activeChat.value].push(newMessage)
+    console.log(`向 ${activeChat.value} 频道发送消息: ${newMessage.content}`)
+    
+    // 清空输入框
+    chatInput.value = ''
+    
+    // 自动滚动到底部
+    nextTick(() => {
+      const chatBox = document.querySelector('.chat-messages')
+      if (chatBox) {
+        chatBox.scrollTop = chatBox.scrollHeight
+      }
+    })
+  } catch (error) {
+    console.error('发送消息失败', error)
+    ElMessage.error('发送消息失败')
+  }
 }
 
 // 添加系统消息
 const addSystemMessage = (content) => {
-  // 添加到所有聊天频道
-  Object.keys(messages.value).forEach(channel => {
-    messages.value[channel].push({
-      id: Date.now() + Math.random(),
+  if (!content || typeof content !== 'string') {
+    console.error('无法添加系统消息：内容无效', content)
+    return
+  }
+
+  try {
+    // 创建系统消息对象
+    const systemMessage = {
+      id: Date.now(),
       userId: 'system',
       username: '系统',
-      content,
-      time: new Date()
-    })
-  })
-  
-  // 自动滚动到底部
-  nextTick(() => {
-    const chatBox = document.querySelector('.chat-messages')
-    if (chatBox) {
-      chatBox.scrollTop = chatBox.scrollHeight
+      content: content,
+      time: new Date(),
+      isSystem: true
     }
-  })
+    
+    // 确保所有聊天频道都已初始化
+    if (!messages.value) {
+      messages.value = {
+        public: [],
+        team1: [],
+        team2: []
+      }
+    }
+    
+    // 添加到所有聊天频道
+    Object.keys(messages.value).forEach(channel => {
+      if (!messages.value[channel]) {
+        messages.value[channel] = []
+      }
+      messages.value[channel].push(systemMessage)
+    })
+    
+    console.log(`系统消息: ${content}`)
+    
+    // 自动滚动到底部
+    nextTick(() => {
+      const chatBox = document.querySelector('.chat-messages')
+      if (chatBox) {
+        chatBox.scrollTop = chatBox.scrollHeight
+      }
+    })
+  } catch (error) {
+    console.error('添加系统消息失败', error)
+  }
 }
 
 // 切换语音状态
@@ -741,6 +1014,13 @@ watch(() => room.value?.status, (newStatus) => {
   }
 })
 
+// 监听路由参数变化，当房间ID变化时重新加载
+watch(() => route.params.id, (newId, oldId) => {
+  if (newId !== oldId) {
+    loadRoomDetail()
+  }
+})
+
 </script>
 
 <template>
@@ -896,16 +1176,16 @@ watch(() => room.value?.status, (newStatus) => {
               <!-- 观众席移到顶部 -->
               <div class="spectators-sidebar">
                 <div class="card-header">
-                  <h2 class="section-title">观众席 ({{ room.spectators.length }})</h2>
+                  <h2 class="section-title">观众席 ({{ room.spectators?.length || 0 }})</h2>
                 </div>
                 
                 <div class="spectators-sidebar-list">
-                  <div v-for="spectator in room.spectators" :key="spectator.userId" class="spectator-sidebar-item">
-                    <img :src="spectator.avatar || 'https://placekitten.com/80/80'" alt="观众头像" class="spectator-avatar">
+                  <div v-for="(spectator, index) in room.spectators || []" :key="spectator.userId" class="spectator-sidebar-item">
+                    <img :src="spectator.avatar || getChampionIcon(index + 15)" alt="观众头像" class="spectator-avatar">
                     <span class="spectator-name">{{ spectator.username }}</span>
                   </div>
                   
-                  <div v-if="room.spectators.length === 0" class="empty-spectators-sidebar">
+                  <div v-if="!room.spectators || room.spectators.length === 0" class="empty-spectators-sidebar">
                     暂无观众
                   </div>
                 </div>
@@ -956,7 +1236,7 @@ watch(() => room.value?.status, (newStatus) => {
                 
                 <div class="voice-participants">
                   <div class="voice-participant" :class="{'speaking': hasJoinedVoice}">
-                    <img :src="userStore.avatar || 'https://placekitten.com/90/90'" alt="您的头像" class="voice-avatar">
+                    <img :src="userStore.avatar || getChampionIcon(8)" alt="您的头像" class="voice-avatar">
                     <span class="participant-name">{{ userStore.username }} (您)</span>
                     <div class="voice-indicator"></div>
                   </div>
@@ -989,17 +1269,17 @@ watch(() => room.value?.status, (newStatus) => {
                       <!-- 等待中状态的玩家列表 -->
                       <div class="section-card players-container" v-if="room.status === 'waiting'">
                         <div class="card-header">
-                          <h2 class="section-title">玩家列表 ({{ room.players.length }}/10)</h2>
+                          <h2 class="section-title">玩家列表 ({{ room.players?.length || 0 }}/10)</h2>
                         </div>
                         
                         <div class="player-grid">
                           <!-- 显示已加入的玩家 -->
                           <div 
-                            v-for="player in room.players" 
+                            v-for="player in room.players || []" 
                             :key="player.userId"
                             class="player-card"
                           >
-                            <img :src="player.avatar || 'https://placekitten.com/100/100'" alt="玩家头像" class="player-avatar">
+                            <img :src="player.avatar || getChampionIcon(index + 9)" alt="玩家头像" class="player-avatar">
                             
                             <div class="player-info">
                               <div class="player-name">
@@ -1015,7 +1295,7 @@ watch(() => room.value?.status, (newStatus) => {
                           
                           <!-- 空位 -->
                           <div 
-                            v-for="n in (10 - room.players.length)" 
+                            v-for="n in (10 - (room.players?.length || 0))" 
                             :key="`empty-slot-${n}`"
                             class="empty-slot"
                           >
@@ -1053,12 +1333,12 @@ watch(() => room.value?.status, (newStatus) => {
                                 <div class="team-players-grid">
                                   <!-- 队长位置 -->
                                   <div 
-                                    v-for="player in room.players.filter(p => p.teamId === 1 && p.isCaptain)" 
+                                    v-for="player in (room.players || []).filter(p => p.teamId === 1 && p.isCaptain)" 
                                     :key="player.userId"
                                     class="team-captain"
                                   >
                                     <div class="captain-badge">队长</div>
-                                    <img :src="player.avatar || 'https://placekitten.com/100/100'" alt="队长头像" class="captain-avatar">
+                                    <img :src="player.avatar || getChampionIcon(index + 10)" alt="队长头像" class="captain-avatar">
                                     <div class="captain-name">{{ player.username }}</div>
                                   </div>
                                   
@@ -1075,7 +1355,7 @@ watch(() => room.value?.status, (newStatus) => {
                                   
                                   <!-- 空位 -->
                                   <div 
-                                    v-for="n in (5 - room.players.filter(p => p.teamId === 1 && p.isCaptain).length - pickedCharacters.filter(c => c.teamId === 1).length)" 
+                                    v-for="n in (5 - (room.players || []).filter(p => p.teamId === 1 && p.isCaptain).length - pickedCharacters.filter(c => c.teamId === 1).length)" 
                                     :key="`empty-pick-1-${n}`"
                                     class="empty-pick"
                                   >
@@ -1095,12 +1375,12 @@ watch(() => room.value?.status, (newStatus) => {
                                 <div class="team-players-grid">
                                   <!-- 队长位置 -->
                                   <div 
-                                    v-for="player in room.players.filter(p => p.teamId === 2 && p.isCaptain)" 
+                                    v-for="player in (room.players || []).filter(p => p.teamId === 2 && p.isCaptain)" 
                                     :key="player.userId"
                                     class="team-captain"
                                   >
                                     <div class="captain-badge">队长</div>
-                                    <img :src="player.avatar || 'https://placekitten.com/100/100'" alt="队长头像" class="captain-avatar">
+                                    <img :src="player.avatar || getChampionIcon(index + 10)" alt="队长头像" class="captain-avatar">
                                     <div class="captain-name">{{ player.username }}</div>
                                   </div>
                                   
@@ -1117,7 +1397,7 @@ watch(() => room.value?.status, (newStatus) => {
                                   
                                   <!-- 空位 -->
                                   <div 
-                                    v-for="n in (5 - room.players.filter(p => p.teamId === 2 && p.isCaptain).length - pickedCharacters.filter(c => c.teamId === 2).length)" 
+                                    v-for="n in (5 - (room.players || []).filter(p => p.teamId === 2 && p.isCaptain).length - pickedCharacters.filter(c => c.teamId === 2).length)" 
                                     :key="`empty-pick-2-${n}`"
                                     class="empty-pick"
                                   >
@@ -1169,29 +1449,36 @@ watch(() => room.value?.status, (newStatus) => {
                       <div class="section-card side-picking-container">
                         <div class="card-header">
                           <h2 class="section-title">选择红蓝方</h2>
+                          <div class="pick-status">
+                            选人阶段已完成
+                          </div>
                         </div>
                         
                         <div class="side-picking-content">
                           <div class="side-picking-message">
-                            <p>选人阶段已完成，由一队队长选择红蓝方</p>
+                            <div class="alert-message">
+                              由一队队长选择红蓝方
+                            </div>
                             
                             <div v-if="isCaptain && userTeamId === 1" class="side-selection">
                               <button 
                                 class="side-btn red-side" 
                                 @click="pickSide('red')"
                               >
-                                选择红方
+                                <div class="side-icon">🔴</div>
+                                <div>选择红方</div>
                               </button>
                               <button 
                                 class="side-btn blue-side" 
                                 @click="pickSide('blue')"
                               >
-                                选择蓝方
+                                <div class="side-icon">🔵</div>
+                                <div>选择蓝方</div>
                               </button>
                             </div>
                             
                             <div v-else class="waiting-for-side-pick">
-                              <p>等待一队队长选择...</p>
+                              <p>等待一队队长选择红蓝方...</p>
                             </div>
                           </div>
                           
@@ -1199,30 +1486,52 @@ watch(() => room.value?.status, (newStatus) => {
                           <div class="teams-composition">
                             <!-- 一队已选择的角色 -->
                             <div class="team-composition team-red">
-                              <h3>一队阵容</h3>
+                              <h3>一队阵容 <span class="team-count">{{ pickedCharacters.filter(c => c.teamId === 1).length }}/5</span></h3>
                               <div class="team-characters">
                                 <div 
                                   v-for="char in pickedCharacters.filter(c => c.teamId === 1)" 
                                   :key="char.characterId"
                                   class="team-character"
                                 >
+                                  <div class="pick-order">{{ char.pickOrder }}</div>
                                   <img :src="char.characterAvatar" :alt="char.characterName" class="character-avatar">
                                   <div class="character-name">{{ char.characterName }}</div>
+                                </div>
+
+                                <!-- 空位 -->
+                                <div 
+                                  v-for="n in (5 - pickedCharacters.filter(c => c.teamId === 1).length)" 
+                                  :key="`empty-team1-${n}`"
+                                  class="empty-character"
+                                >
+                                  <div class="empty-avatar"></div>
+                                  <div class="empty-name">等待选择</div>
                                 </div>
                               </div>
                             </div>
                             
                             <!-- 二队已选择的角色 -->
                             <div class="team-composition team-blue">
-                              <h3>二队阵容</h3>
+                              <h3>二队阵容 <span class="team-count">{{ pickedCharacters.filter(c => c.teamId === 2).length }}/5</span></h3>
                               <div class="team-characters">
                                 <div 
                                   v-for="char in pickedCharacters.filter(c => c.teamId === 2)" 
                                   :key="char.characterId"
                                   class="team-character"
                                 >
+                                  <div class="pick-order">{{ char.pickOrder }}</div>
                                   <img :src="char.characterAvatar" :alt="char.characterName" class="character-avatar">
                                   <div class="character-name">{{ char.characterName }}</div>
+                                </div>
+
+                                <!-- 空位 -->
+                                <div 
+                                  v-for="n in (5 - pickedCharacters.filter(c => c.teamId === 2).length)" 
+                                  :key="`empty-team2-${n}`"
+                                  class="empty-character"
+                                >
+                                  <div class="empty-avatar"></div>
+                                  <div class="empty-name">等待选择</div>
                                 </div>
                               </div>
                             </div>
@@ -1412,7 +1721,7 @@ watch(() => room.value?.status, (newStatus) => {
                         :class="['message', {'system-message': msg.userId === 'system'}]"
                       >
                         <template v-if="msg.userId !== 'system'">
-                          <img :src="'https://placekitten.com/80/80'" alt="头像" class="message-avatar">
+                          <img :src="msg.avatar || getChampionIcon(20)" alt="头像" class="message-avatar">
                           <div class="message-content">
                             <div class="message-author">
                               {{ msg.username }}
@@ -1499,7 +1808,7 @@ watch(() => room.value?.status, (newStatus) => {
         </template>
         
         <el-empty 
-          v-else 
+          v-else-if="!isLoading"
           description="房间不存在或已被删除" 
           :image-size="200"
         >
@@ -2582,18 +2891,239 @@ watch(() => room.value?.status, (newStatus) => {
   }
 }
 
-@media (max-width: 576px) {
-  .player-grid {
-    grid-template-columns: 1fr;
+/* 选边阶段样式 */
+.side-picking-content {
+  padding: 2rem;
+}
+
+.side-picking-message {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.side-selection {
+  display: flex;
+  justify-content: center;
+  gap: 2rem;
+  margin: 2rem 0;
+}
+
+.side-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem 2.5rem;
+  border-radius: 12px;
+  font-size: 1.2rem;
+  font-weight: bold;
+  border: none;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.side-btn:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+}
+
+.side-btn.red-side {
+  background-color: rgba(220, 53, 69, 0.2);
+  color: #dc3545;
+  border: 2px solid #dc3545;
+}
+
+.side-btn.blue-side {
+  background-color: rgba(13, 110, 253, 0.2);
+  color: #0d6efd;
+  border: 2px solid #0d6efd;
+}
+
+.side-btn.red-side:hover {
+  background-color: rgba(220, 53, 69, 0.3);
+}
+
+.side-btn.blue-side:hover {
+  background-color: rgba(13, 110, 253, 0.3);
+}
+
+.waiting-for-side-pick {
+  margin: 2rem 0;
+  padding: 1.5rem;
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.teams-composition {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 2rem;
+  gap: 2rem;
+}
+
+.team-composition {
+  flex: 1;
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.team-composition.team-red, .team-composition.side-red {
+  border-left: 4px solid #dc3545;
+}
+
+.team-composition.team-blue, .team-composition.side-blue {
+  border-left: 4px solid #0d6efd;
+}
+
+.team-composition h3 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.side-label {
+  font-size: 0.8rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.side-red .side-label {
+  background-color: rgba(220, 53, 69, 0.2);
+  color: #dc3545;
+}
+
+.side-blue .side-label {
+  background-color: rgba(13, 110, 253, 0.2);
+  color: #0d6efd;
+}
+
+.team-characters {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 1rem;
+}
+
+.team-character {
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  padding: 0.75rem;
+  text-align: center;
+  transition: all 0.3s;
+}
+
+.team-character:hover {
+  transform: translateY(-3px);
+  background-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.1);
+}
+
+.character-avatar {
+  width: 4rem;
+  height: 4rem;
+  border-radius: 50%;
+  margin-bottom: 0.5rem;
+  object-fit: cover;
+}
+
+.character-name {
+  font-weight: 500;
+  font-size: 0.9rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 992px) {
+  .side-picking-content {
+    padding: 1rem;
   }
   
-  .teams-picks {
+  .teams-composition {
     flex-direction: column;
   }
   
-  .picked-characters {
-    justify-content: center;
+  .side-selection {
+    flex-direction: column;
+    gap: 1rem;
   }
+  
+  .team-characters {
+    grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  }
+}
+
+.team-voice-tab:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.alert-message {
+  background-color: rgba(255, 152, 0, 0.1);
+  border-left: 3px solid #ff9800;
+  padding: 1rem;
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+  color: #ff9800;
+  font-weight: 500;
+}
+
+.pick-order {
+  position: absolute;
+  top: -8px;
+  left: -8px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background-color: #ff9800;
+  color: white;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  border: 2px solid #1e1f2d;
+}
+
+.team-character {
+  position: relative;
+}
+
+.team-count {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: normal;
+}
+
+.empty-character {
+  background-color: rgba(255, 255, 255, 0.02);
+  border-radius: 8px;
+  padding: 0.75rem;
+  text-align: center;
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+}
+
+.empty-avatar {
+  width: 4rem;
+  height: 4rem;
+  border-radius: 50%;
+  margin: 0 auto 0.5rem;
+  background-color: rgba(255, 255, 255, 0.03);
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+}
+
+.empty-name {
+  color: #8b8fa3;
+  font-size: 0.9rem;
+}
+
+.side-icon {
+  font-size: 2rem;
+  margin-bottom: 0.75rem;
 }
 
 /* 侧边栏观众席样式 */
@@ -2865,7 +3395,7 @@ watch(() => room.value?.status, (newStatus) => {
   padding: 0 15px !important;
 }
 
-/* 在样式部分添加 */
+/* 语音相关样式 */
 .team-voice-tabs {
   display: flex;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
@@ -2886,9 +3416,5 @@ watch(() => room.value?.status, (newStatus) => {
   color: #fff;
   border-bottom: 2px solid #ff9800;
   background-color: rgba(255, 152, 0, 0.1);
-}
-
-.team-voice-tab:hover {
-  background-color: rgba(255, 255, 255, 0.05);
 }
 </style>

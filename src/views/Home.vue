@@ -5,6 +5,19 @@ import { useUserStore } from '../stores/user'
 import { useRoomStore } from '../stores/room'
 import CreateRoomModal from '../components/CreateRoomModal.vue'
 
+// 常用的英雄头像列表，用于随机分配
+const championIcons = [
+  'Ahri', 'Annie', 'Ashe', 'Caitlyn', 'Darius', 
+  'Ezreal', 'Garen', 'Jinx', 'Lux', 'Malphite',
+  'Nami', 'Syndra', 'Thresh', 'Yasuo', 'Zed'
+]
+
+// 生成英雄头像URL
+const getChampionIcon = (index = 0) => {
+  const champion = championIcons[index % championIcons.length]
+  return `https://ddragon.leagueoflegends.com/cdn/13.12.1/img/champion/${champion}.png`
+}
+
 const router = useRouter()
 const userStore = useUserStore()
 const roomStore = useRoomStore()
@@ -16,45 +29,31 @@ const isLoggedIn = computed(() => userStore.isLoggedIn)
 const showCreateRoomModal = ref(false)
 
 // 热门房间
-const hotRooms = ref([
-  {
-    id: 'room1',
-    name: '周末欢乐局',
-    status: 'waiting',
-    players: 5,
-    playerCount: 10,
-    createTime: new Date(Date.now() - 10 * 60 * 1000)
-  },
-  {
-    id: 'room2',
-    name: '高手进阶训练',
-    status: 'gaming',
-    players: 10,
-    playerCount: 10,
-    createTime: new Date(Date.now() - 30 * 60 * 1000)
-  }
-])
+const hotRooms = ref([])
 const myRooms = ref([])
-const isLoading = ref(false)
+const isLoading = ref(true)
 
-// 加载数据，但使用初始数据减少加载状态
+// 加载数据，从后端直接获取
 onMounted(async () => {
   try {
-    // 后台异步加载热门房间，不显示加载状态
+    // 后台异步加载热门房间
+    isLoading.value = true
     const rooms = await roomStore.fetchRooms()
     if (rooms && rooms.length > 0) {
-      hotRooms.value = rooms.slice(0, 2)
+      // 获取正在进行的房间，最多显示3个
+      hotRooms.value = rooms
+        .filter(room => room.status === 'gaming' || room.status === 'waiting')
+        .slice(0, 3)
     }
     
     if (isLoggedIn.value) {
-      // 加载我的房间
-      isLoading.value = true
-      const userRooms = await roomStore.fetchMyRooms(userStore.userId)
+      // 加载我的房间，API会根据当前用户token识别用户
+      const userRooms = await roomStore.fetchMyRooms()
       myRooms.value = userRooms.slice(0, 3)
-      isLoading.value = false
     }
   } catch (error) {
     console.error('加载数据失败:', error)
+  } finally {
     isLoading.value = false
   }
 })
@@ -114,6 +113,21 @@ const viewMoreRooms = () => {
 const viewMyRooms = () => {
   router.push('/my-rooms')
 }
+
+// 添加时间格式化函数
+const formatTime = (timestamp) => {
+  if (!timestamp) return '未知时间'
+  
+  const now = new Date()
+  const date = new Date(timestamp)
+  const diff = Math.floor((now - date) / 1000) // 差异（秒）
+  
+  if (diff < 60) return '刚刚'
+  if (diff < 3600) return `${Math.floor(diff / 60)}分钟前`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}小时前`
+  
+  return date.toLocaleDateString()
+}
 </script>
 
 <template>
@@ -143,51 +157,43 @@ const viewMyRooms = () => {
           </div>
           <el-skeleton :loading="isLoading" animated :count="2" :throttle="500">
             <template #default>
-              <div class="room-list">
-                <!-- 周末欢乐局 -->
-                <div class="room-card">
+              <div class="room-list" v-if="hotRooms.length > 0">
+                <!-- 循环渲染热门房间 -->
+                <div class="room-card" v-for="room in hotRooms" :key="room.id">
                   <div class="room-header">
-                    <h3 class="room-title">周末欢乐局</h3>
-                    <span class="room-status status-waiting">等待中</span>
+                    <h3 class="room-title">{{ room.name }}</h3>
+                    <span :class="['room-status', statusClass(room.status)]">{{ statusText(room.status) }}</span>
                   </div>
                   <div class="room-info">
-                    <span>玩家: 5/10</span>
-                    <span>创建时间: 10分钟前</span>
+                    <span>玩家: {{ room.players ? room.players.length : 0 }}/{{ room.playerCount }}</span>
+                    <span>创建时间: {{ formatTime(room.createTime) }}</span>
                   </div>
                   <div class="room-players">
-                    <img src="https://placekitten.com/100/100" alt="玩家头像" class="player-avatar">
-                    <img src="https://placekitten.com/101/101" alt="玩家头像" class="player-avatar">
-                    <img src="https://placekitten.com/102/102" alt="玩家头像" class="player-avatar">
-                    <img src="https://placekitten.com/103/103" alt="玩家头像" class="player-avatar">
-                    <img src="https://placekitten.com/104/104" alt="玩家头像" class="player-avatar">
+                    <template v-if="room.players && room.players.length > 0">
+                      <img v-for="(player, index) in room.players.slice(0, 5)" 
+                           :key="index" 
+                           :src="player.avatar || getChampionIcon(index)" 
+                           alt="玩家头像" 
+                           class="player-avatar">
+                      <span v-if="room.players.length > 5" class="player-more">+{{ room.players.length - 5 }}</span>
+                    </template>
+                    <span v-else class="no-players">暂无玩家</span>
                   </div>
                   <div class="room-footer">
-                    <a href="javascript:void(0)" class="btn btn-primary" @click.stop="joinRoom('room1')">加入房间</a>
+                    <a href="javascript:void(0)" 
+                       :class="['btn', room.status === 'waiting' ? 'btn-primary' : 'btn-outline']" 
+                       @click.stop="joinRoom(room.id)">
+                      {{ room.status === 'waiting' ? '加入房间' : '观战中+' }}
+                    </a>
                   </div>
                 </div>
-                
-                <!-- 高手进阶训练 -->
-                <div class="room-card">
-                  <div class="room-header">
-                    <h3 class="room-title">高手进阶训练</h3>
-                    <span class="room-status status-gaming">游戏中</span>
-                  </div>
-                  <div class="room-info">
-                    <span>玩家: 10/10</span>
-                    <span>创建时间: 30分钟前</span>
-                  </div>
-                  <div class="room-players">
-                    <img src="https://placekitten.com/110/110" alt="玩家头像" class="player-avatar">
-                    <img src="https://placekitten.com/111/111" alt="玩家头像" class="player-avatar">
-                    <img src="https://placekitten.com/112/112" alt="玩家头像" class="player-avatar">
-                    <img src="https://placekitten.com/113/113" alt="玩家头像" class="player-avatar">
-                    <img src="https://placekitten.com/114/114" alt="玩家头像" class="player-avatar">
-                    <span class="player-more">+5</span>
-                  </div>
-                  <div class="room-footer">
-                    <button class="btn btn-outline" @click.stop="joinRoom('room2')">观战中+</button>
-                  </div>
-                </div>
+              </div>
+              
+              <!-- 无房间显示 -->
+              <div class="empty-state" v-else>
+                <div class="empty-icon">🏠</div>
+                <div class="empty-text">暂时没有热门房间</div>
+                <button class="btn btn-primary" @click="createRoom">立即创建房间</button>
               </div>
             </template>
           </el-skeleton>
@@ -394,5 +400,31 @@ const viewMyRooms = () => {
 .btn:hover {
   transform: translateY(-2px);
   box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+}
+
+/* 无房间状态 */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1rem;
+  text-align: center;
+}
+
+.empty-icon {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+}
+
+.empty-text {
+  font-size: 1.2rem;
+  margin-bottom: 2rem;
+  color: #a0a0a0;
+}
+
+.no-players {
+  color: #a0a0a0;
+  font-size: 0.9rem;
 }
 </style> 

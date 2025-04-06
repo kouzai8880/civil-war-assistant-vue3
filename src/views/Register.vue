@@ -10,16 +10,12 @@ const userStore = useUserStore()
 // 表单数据
 const registerForm = reactive({
   username: '',
+  email: '',
   password: '',
   confirmPassword: '',
-  phone: '',
-  code: '',
+  gameId: '',
   agreement: false
 })
-
-// 短信倒计时
-const countdown = ref(0)
-const countdownTimer = ref(null)
 
 // 加载状态
 const loading = ref(false)
@@ -29,6 +25,10 @@ const registerRules = {
   username: [
     { required: true, message: '请输入用户名', trigger: 'blur' },
     { min: 3, max: 20, message: '长度在3到20个字符', trigger: 'blur' }
+  ],
+  email: [
+    { required: true, message: '请输入邮箱', trigger: 'blur' },
+    { type: 'email', message: '请输入正确的邮箱格式', trigger: 'blur' }
   ],
   password: [
     { required: true, message: '请输入密码', trigger: 'blur' },
@@ -47,13 +47,8 @@ const registerRules = {
       trigger: 'blur'
     }
   ],
-  phone: [
-    { required: true, message: '请输入手机号', trigger: 'blur' },
-    { pattern: /^1[3-9]\d{9}$/, message: '请输入正确的手机号码', trigger: 'blur' }
-  ],
-  code: [
-    { required: true, message: '请输入验证码', trigger: 'blur' },
-    { len: 6, message: '验证码长度为6位', trigger: 'blur' }
+  gameId: [
+    { min: 3, max: 30, message: '长度在3到30个字符', trigger: 'blur' }
   ],
   agreement: [
     {
@@ -72,30 +67,6 @@ const registerRules = {
 // 注册表单引用
 const registerFormRef = ref(null)
 
-// 获取短信验证码
-const getSmsCode = async () => {
-  try {
-    // 验证手机号格式
-    const phoneValid = await registerFormRef.value.validateField('phone')
-    if (phoneValid !== true) return
-    
-    // 开始倒计时
-    countdown.value = 60
-    countdownTimer.value = setInterval(() => {
-      countdown.value--
-      if (countdown.value <= 0) {
-        clearInterval(countdownTimer.value)
-        countdownTimer.value = null
-      }
-    }, 1000)
-    
-    // 模拟API调用
-    ElMessage.success('验证码已发送，请注意查收')
-  } catch (error) {
-    console.error('获取验证码失败:', error)
-  }
-}
-
 // 处理注册
 const handleRegister = async () => {
   try {
@@ -109,9 +80,10 @@ const handleRegister = async () => {
     // 注册处理
     const registerData = {
       username: registerForm.username,
+      email: registerForm.email,
       password: registerForm.password,
-      phone: registerForm.phone,
-      code: registerForm.code
+      confirmPassword: registerForm.confirmPassword,
+      gameId: registerForm.gameId
     }
     
     const success = await userStore.register(registerData)
@@ -154,8 +126,16 @@ const goToLogin = () => {
         <el-form-item prop="username">
           <el-input
             v-model="registerForm.username"
-            placeholder="请设置用户名"
+            placeholder="请设置昵称"
             prefix-icon="User"
+          />
+        </el-form-item>
+        
+        <el-form-item prop="email">
+          <el-input
+            v-model="registerForm.email"
+            placeholder="请输入邮箱(登录凭证)"
+            prefix-icon="Email"
           />
         </el-form-item>
         
@@ -179,31 +159,15 @@ const goToLogin = () => {
           />
         </el-form-item>
         
-        <el-form-item prop="phone">
+        <el-form-item prop="gameId">
           <el-input
-            v-model="registerForm.phone"
-            placeholder="请输入手机号"
-            prefix-icon="Iphone"
-            maxlength="11"
+            v-model="registerForm.gameId"
+            placeholder="请输入游戏ID（可选）"
+            prefix-icon="Game"
           />
-        </el-form-item>
-        
-        <el-form-item prop="code">
-          <el-input
-            v-model="registerForm.code"
-            placeholder="请输入验证码"
-            prefix-icon="ChatLineRound"
-            maxlength="6"
-          >
-            <template #append>
-              <el-button 
-                :disabled="countdown > 0" 
-                @click="getSmsCode"
-              >
-                {{ countdown > 0 ? `${countdown}s` : '获取验证码' }}
-              </el-button>
-            </template>
-          </el-input>
+          <template #tip>
+            <span class="form-tip">游戏ID为可选项，稍后也可以在个人设置中绑定</span>
+          </template>
         </el-form-item>
         
         <el-form-item prop="agreement">
@@ -296,6 +260,13 @@ const goToLogin = () => {
   text-align: center;
   color: var(--text-secondary);
   margin-top: var(--spacing-lg);
+}
+
+.form-tip {
+  font-size: 12px;
+  color: var(--text-secondary);
+  display: block;
+  margin-top: 4px;
 }
 
 /* 响应式调整 */

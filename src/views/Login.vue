@@ -114,6 +114,29 @@ const handleLogin = async () => {
     if (success) {
       ElMessage.success('登录成功')
       
+      // 尝试获取用户信息
+      try {
+        console.log('尝试获取用户信息')
+        const userData = await userStore.fetchCurrentUser()
+        
+        if (!userData) {
+          const errorMsg = userStore.error || ''
+          console.error('获取用户信息失败:', errorMsg)
+          
+          if (errorMsg.includes('404') || errorMsg.includes('Not Found')) {
+            ElMessage.error('API错误: 用户信息接口(/auth/me)不存在，请确认后端API实现')
+          } else {
+            ElMessage.error('API错误: ' + errorMsg)
+          }
+          
+          // 虽然用户信息获取失败，但不影响登录流程，用户仍可以使用基本功能
+          ElMessage.warning('部分功能可能受限，请联系管理员检查API配置')
+        }
+      } catch (e) {
+        console.error('获取用户信息异常:', e)
+        ElMessage.error('API错误: ' + (e.message || '未知错误'))
+      }
+      
       // 登录成功后的跳转
       const redirectUrl = route.query.redirect || '/'
       router.push(redirectUrl)

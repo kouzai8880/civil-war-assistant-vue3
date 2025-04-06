@@ -20,6 +20,19 @@ const activeTab = ref('current')
 // 检查登录状态
 const isLoggedIn = computed(() => userStore.isLoggedIn)
 
+// 常用的英雄头像列表，用于随机分配
+const championIcons = [
+  'Ahri', 'Annie', 'Ashe', 'Caitlyn', 'Darius', 
+  'Ezreal', 'Garen', 'Jinx', 'Lux', 'Malphite',
+  'Nami', 'Syndra', 'Thresh', 'Yasuo', 'Zed'
+]
+
+// 生成英雄头像URL
+const getChampionIcon = (index = 0) => {
+  const champion = championIcons[index % championIcons.length]
+  return `https://ddragon.leagueoflegends.com/cdn/13.12.1/img/champion/${champion}.png`
+}
+
 // 加载房间数据
 onMounted(async () => {
   // 检查是否登录
@@ -36,21 +49,41 @@ onMounted(async () => {
 const loadMyRooms = async () => {
   isLoading.value = true
   try {
-    // 加载我创建的房间
-    const rooms = await roomStore.fetchMyRooms(userStore.userId)
+    // 加载我创建的房间，API会根据当前用户token识别用户
+    console.log('正在获取我的房间，当前用户ID:', userStore.userId)
+    const rooms = await roomStore.fetchMyRooms()
+    
+    console.log('API返回的原始房间数据:', JSON.stringify(rooms))
     
     if (rooms && rooms.length > 0) {
-      // 分类房间
-      myRooms.value = rooms.filter(room => 
+      // 确保只显示当前用户创建的房间
+      const myCreatedRooms = rooms.filter(room => 
+        room.creatorId === userStore.userId
+      )
+      
+      console.log(`获取到房间总数: ${rooms.length}, 我创建的房间: ${myCreatedRooms.length}, 当前用户ID: ${userStore.userId}`)
+      console.log('我创建的房间详情:', JSON.stringify(myCreatedRooms))
+      
+      // 按状态分类房间
+      myRooms.value = myCreatedRooms.filter(room => 
         room.status === 'waiting' || room.status === 'picking' || room.status === 'gaming'
       )
       
-      historicalRooms.value = rooms.filter(room => room.status === 'ended')
+      historicalRooms.value = myCreatedRooms.filter(room => 
+        room.status === 'ended'
+      )
+      
+      console.log('已加载房间：', myRooms.value.length, '个当前房间，', historicalRooms.value.length, '个历史房间')
+    } else {
+      console.log('没有找到任何房间')
+      myRooms.value = []
+      historicalRooms.value = []
     }
-    // 如果没有获取到数据，保留初始的示例数据
   } catch (error) {
     console.error('加载房间失败:', error)
-    // 发生错误时不清空示例数据
+    ElMessage.error('加载房间失败，请稍后重试')
+    myRooms.value = []
+    historicalRooms.value = []
   } finally {
     isLoading.value = false
   }
@@ -162,7 +195,7 @@ const viewRoomDetail = (roomId) => {
           </div>
           <div class="room-info">
             <span>创建于: {{ new Date(room.createTime).toLocaleString() }}</span>
-            <span>玩家: {{ room.players.length }}/{{ room.playerCount }}</span>
+            <span>玩家: {{ (room.players?.length || 0) }}/{{ room.playerCount }}</span>
           </div>
           <div class="room-details">
             <div class="room-detail-item">
@@ -176,13 +209,13 @@ const viewRoomDetail = (roomId) => {
           </div>
           <div class="room-players">
             <img 
-              v-for="(player, index) in room.players.slice(0, 6)" 
+              v-for="(player, index) in (room.players || []).slice(0, 6)" 
               :key="index" 
-              :src="player.avatar || `https://placekitten.com/${100 + index}/${100 + index}`" 
+              :src="player.avatar || getChampionIcon(index)" 
               :alt="player.name" 
               class="player-avatar"
             >
-            <span v-if="room.players.length > 6" class="more-players">+{{ room.players.length - 6 }}</span>
+            <span v-if="room.players && room.players.length > 6" class="more-players">+{{ room.players.length - 6 }}</span>
           </div>
           <div class="room-footer">
             <a href="javascript:void(0)" class="btn btn-primary" @click="enterRoom(room.id)">进入房间</a>
@@ -211,7 +244,7 @@ const viewRoomDetail = (roomId) => {
           </div>
           <div class="room-info">
             <span>创建于: {{ new Date(room.createTime).toLocaleString() }}</span>
-            <span>持续时间: {{ room.duration }}分钟</span>
+            <span>持续时间: {{ room.duration || '未知' }}分钟</span>
           </div>
           <div class="room-details">
             <div class="room-detail-item">
@@ -220,18 +253,18 @@ const viewRoomDetail = (roomId) => {
             </div>
             <div class="room-detail-item">
               <span class="detail-label">我的位置:</span>
-              <span>{{ room.myTeam }}</span>
+              <span>{{ room.myTeam || '未知' }}</span>
             </div>
           </div>
           <div class="room-players">
             <img 
-              v-for="(player, index) in room.players.slice(0, 5)" 
+              v-for="(player, index) in (room.players || []).slice(0, 5)" 
               :key="index" 
-              :src="player.avatar || `https://placekitten.com/${100 + index}/${100 + index}`" 
+              :src="player.avatar || getChampionIcon(index)" 
               :alt="player.name" 
               class="player-avatar"
             >
-            <span v-if="room.players.length > 5" class="more-players">+{{ room.players.length - 5 }}</span>
+            <span v-if="room.players && room.players.length > 5" class="more-players">+{{ room.players.length - 5 }}</span>
           </div>
           <div class="room-footer">
             <button class="btn-icon" title="查看战绩">🔍</button>
