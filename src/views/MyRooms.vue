@@ -91,7 +91,39 @@ const loadMyRooms = async () => {
 
 // 进入房间
 const enterRoom = (roomId) => {
-  router.push(`/room/${roomId}`)
+  // 查找房间信息
+  const room = myRooms.value.find(r => r.id === roomId) || 
+               historicalRooms.value.find(r => r.id === roomId);
+  
+  if (!room) {
+    ElMessage.error('房间信息不存在');
+    return;
+  }
+  
+  // 检查用户是否已经在房间中（作为玩家或观众）
+  const isAlreadyInRoom = room.players && room.players.some(player => player.userId === userStore.userId);
+  const isSpectator = room.spectators && room.spectators.some(spectator => spectator.userId === userStore.userId);
+  
+  if (isAlreadyInRoom || isSpectator) {
+    console.log('用户已在房间中，直接跳转到房间详情页');
+    router.push(`/room/${roomId}`);
+    return;
+  }
+  
+  // 如果用户不在房间中，尝试加入房间
+  try {
+    // 调用API加入房间
+    roomStore.joinRoom(roomId).then(success => {
+      if (success) {
+        router.push(`/room/${roomId}`);
+      } else {
+        ElMessage.error(roomStore.error || '加入房间失败');
+      }
+    });
+  } catch (error) {
+    console.error('加入房间失败:', error);
+    ElMessage.error('加入房间失败，请稍后重试');
+  }
 }
 
 // 创建新房间

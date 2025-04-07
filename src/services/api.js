@@ -50,7 +50,14 @@ apiClient.interceptors.response.use(
       data: response.data
     });
     
-    return response.data;
+    // 确保返回的数据包含状态信息
+    const result = {
+      status: response.data.status || 'success',
+      data: response.data.data || response.data,
+      message: response.data.message
+    };
+    
+    return result;
   },
   error => {
     console.error('API错误:', error);
@@ -595,6 +602,30 @@ export const roomApi = {
       };
     } catch (error) {
       throw error;
+    }
+  },
+  
+  // 踢出玩家
+  kickPlayer: async (roomId, targetUserId) => {
+    console.log('API方法调用: roomApi.kickPlayer', { roomId, targetUserId });
+    
+    try {
+      const response = await apiClient.post(`/rooms/${roomId}/kick`, { targetUserId });
+      console.log('踢出玩家API响应:', response);
+      
+      // 确保返回正确的响应格式
+      return {
+        status: response.status || 'success',
+        data: response.data,
+        message: response.message || '已踢出用户'
+      };
+    } catch (error) {
+      console.error('踢出玩家失败:', error);
+      throw {
+        status: 'error',
+        message: error.response?.data?.message || error.message || '踢出玩家失败',
+        originalError: error
+      };
     }
   },
   

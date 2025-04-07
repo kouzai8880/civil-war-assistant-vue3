@@ -942,7 +942,75 @@ POST /rooms/{roomId}/leave
 }
 ```
 
-### 3.8 开始游戏
+### 3.8 踢出玩家
+
+房主可以将其他玩家或观众踢出房间。
+
+**请求**:
+
+```
+POST /rooms/{roomId}/kick
+```
+
+**参数**:
+
+```json
+{
+  "targetUserId": "67e93fa4b71ccae1597dca13"  // 要踢出的用户ID
+}
+```
+
+**响应**:
+
+```json
+{
+  "status": "success",
+  "message": "已踢出用户"
+}
+```
+
+**WebSocket事件**:
+
+当用户被踢出房间时，会触发以下WebSocket事件：
+
+1. 被踢出的用户会收到以下事件之一：
+   - `player.kicked`：当玩家被踢出时
+   - `spectator.kicked`：当观众被踢出时
+
+   事件数据格式：
+   ```json
+   {
+     "roomId": "67e95c6119732f3f913ce8d7",  // 房间ID
+     "kickedBy": "67e940387df2d4360a53fb78"  // 踢出该用户的房主ID
+   }
+   ```
+
+2. 房间内其他用户会收到以下事件之一：
+   - `player.kicked`：当玩家被踢出时
+   - `spectator.kicked`：当观众被踢出时
+
+   事件数据格式：
+   ```json
+   {
+     "userId": "67e93fa4b71ccae1597dca13",  // 被踢出的用户ID
+     "kickedBy": "67e940387df2d4360a53fb78",  // 踢出该用户的房主ID
+     "updateTime": "2025-03-30T15:30:45.123Z"  // 更新时间
+   }
+   ```
+
+**客户端处理**:
+
+1. 当收到 `player.kicked` 或 `spectator.kicked` 事件时：
+   - 如果当前用户是被踢出的用户（通过比较 `userId` 或 `roomId`）：
+     - 显示被踢出提示
+     - 退出房间界面
+     - 更新用户状态
+   - 如果当前用户是房间内的其他用户：
+     - 从玩家列表或观众列表中移除被踢出的用户
+     - 更新房间状态
+     - 可选：显示用户被踢出的提示
+
+### 3.9 开始游戏
 
 只有创建者可以操作，会执行随机分队、选择队长等操作。
 
@@ -995,7 +1063,7 @@ POST /rooms/{roomId}/start
 }
 ```
 
-### 3.9 获取我的房间列表
+### 3.10 获取我的房间列表
 
 获取当前用户参与的房间列表。
 
@@ -1904,7 +1972,33 @@ WebSocket: https://dvmxujshaduv.sealoshzh.site/ws?token={jwt_token}
 }
 ```
 
-6. **聊天消息**:
+6. **玩家被踢出**:
+```json
+{
+  "type": "player.kicked",
+  "data": {
+    "roomId": "r789012",
+    "userId": "u123456",
+    "username": "玩家昵称",
+    "kickedBy": "u654321" // 踢出该玩家的用户ID
+  }
+}
+```
+
+7. **观众被踢出**:
+```json
+{
+  "type": "spectator.kicked",
+  "data": {
+    "roomId": "r789012",
+    "userId": "u123456",
+    "username": "玩家昵称",
+    "kickedBy": "u654321" // 踢出该观众的用户ID
+  }
+}
+```
+
+8. **聊天消息**:
 ```json
 {
   "type": "chat.message",
@@ -1916,7 +2010,7 @@ WebSocket: https://dvmxujshaduv.sealoshzh.site/ws?token={jwt_token}
 }
 ```
 
-7. **队伍变更**:
+9. **队伍变更**:
 ```json
 {
   "type": "team.update",
@@ -1929,7 +2023,7 @@ WebSocket: https://dvmxujshaduv.sealoshzh.site/ws?token={jwt_token}
 }
 ```
 
-8. **邀请通知**:
+10. **邀请通知**:
 ```json
 {
   "type": "invite.received",
@@ -1946,7 +2040,7 @@ WebSocket: https://dvmxujshaduv.sealoshzh.site/ws?token={jwt_token}
 }
 ```
 
-9. **游戏开始通知**:
+11. **游戏开始通知**:
 ```json
 {
   "type": "game.start",

@@ -3,12 +3,15 @@ import { ref, onMounted, computed, watch, nextTick, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useUserStore } from '../stores/user'
 import { useRoomStore } from '../stores/room'
+import { useSocketStore } from '../stores/socket'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Delete } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const route = useRoute()
 const userStore = useUserStore()
 const roomStore = useRoomStore()
+const socketStore = useSocketStore()
 
 // 房间ID
 const roomId = computed(() => route.params.id)
@@ -375,14 +378,70 @@ const refreshInterval = ref(null)
 onMounted(async () => {
   if (!userStore.isLoggedIn) {
     ElMessage.warning('请先登录')
-    router.push(`/login?redirect=${encodeURIComponent(route.fullPath)}`)
+    router.push('/login')
     return
   }
   
-  await loadRoomDetail()
+  isLoading.value = true
   
-  // 设置定期刷新
-  setupRefreshInterval()
+  try {
+    // 先获取房间详情
+    const roomData = await roomStore.fetchRoomDetail(roomId.value)
+    
+    if (!roomData) {
+      ElMessage.error('房间不存在或已被删除')
+      router.push('/rooms')
+      return
+    }
+    
+    // 检查用户是否已经在房间中
+    const isAlreadyInRoom = roomStore.isUserInRoom(roomData)
+    
+    if (!isAlreadyInRoom) {
+      // 如果用户不在房间中，尝试加入房间
+      const success = await roomStore.joinRoom(roomId.value)
+      
+      if (!success) {
+        ElMessage.error(roomStore.error || '加入房间失败')
+        router.push('/rooms')
+        return
+      }
+    } else {
+      console.log('用户已在房间中，无需再次加入')
+    }
+    
+    // 初始化聊天消息
+    if (roomData.messages && roomData.messages.length > 0) {
+      messages.value.public = roomData.messages.filter(msg => !msg.teamId)
+      messages.value.team1 = roomData.messages.filter(msg => msg.teamId === 1)
+      messages.value.team2 = roomData.messages.filter(msg => msg.teamId === 2)
+    }
+    
+    // 如果房间已经在选人阶段，初始化选人状态
+    if (roomData.status === 'picking' && roomData.pickPhase) {
+      pickingPhase.value = { ...roomData.pickPhase }
+    }
+    
+    // 如果房间已经在选边阶段，初始化选边状态
+    if (roomData.status === 'side-picking') {
+      // 如果当前用户是一队队长，显示选边弹窗
+      if (isCaptain.value && userTeamId.value === 1) {
+        sideSelectorVisible.value = true
+      }
+    }
+    
+    // 如果房间已经在游戏中，初始化游戏状态
+    if (roomData.status === 'gaming') {
+      // 这里可以添加游戏状态的初始化逻辑
+    }
+    
+  } catch (error) {
+    console.error('加载房间失败:', error)
+    ElMessage.error('加载房间失败，请稍后重试')
+    router.push('/rooms')
+  } finally {
+    isLoading.value = false
+  }
 })
 
 // 设置定期刷新
@@ -410,111 +469,6 @@ onUnmounted(() => {
     console.log('已清除房间数据定时刷新')
   }
 })
-
-// 加载房间详情
-const loadRoomDetail = async () => {
-  if (!roomId.value) {
-    console.error('无法加载房间：没有房间ID')
-    ElMessage.error('无法加载房间：没有房间ID')
-    router.push('/rooms')
-    return
-  }
-  
-  isLoading.value = true
-  
-  try {
-    // 延迟一下，确保 isLoading 状态完全应用
-    await new Promise(resolve => setTimeout(resolve, 50));
-    
-    console.log(`正在加载房间详情，ID: ${roomId.value}`)
-    const result = await roomStore.fetchRoomDetail(roomId.value)
-    
-    if (!result || !room.value) {
-      console.error('房间不存在或无法加载房间数据')
-      ElMessage.error('无法加载房间详情，可能不存在或已关闭')
-      // 延迟导航，给用户看到错误消息的时间
-      setTimeout(() => {
-        router.push('/rooms')
-      }, 1500);
-      return;
-    }
-    
-    console.log('房间详情加载成功:', room.value)
-    
-    // 确保有观众列表
-    if (!room.value.spectators) {
-      room.value.spectators = []
-    }
-    
-    // 确保有队伍列表
-    if (!room.value.teams) {
-      room.value.teams = [
-        { id: 1, name: '一队', side: null, players: [] },
-        { id: 2, name: '二队', side: null, players: [] }
-      ]
-    }
-    
-    // 确保玩家列表存在
-    if (!room.value.players) {
-      room.value.players = []
-    }
-    
-    // 确保当前用户在房间中，如果不在，添加到观众席
-    if (currentUserId.value) {
-      const currentPlayer = room.value.players.find(p => p.userId === currentUserId.value)
-      const currentSpectator = room.value.spectators.find(s => s.userId === currentUserId.value)
-      
-      if (!currentPlayer && !currentSpectator) {
-        // 将用户添加到观众席
-        addUserToSpectators()
-      }
-    }
-    
-    // 如果房间状态为游戏中，但没有队伍信息，初始化队伍信息
-    if (room.value.status === 'in_progress' && (!room.value.teams || room.value.teams.length === 0)) {
-      // 初始化队伍数据
-      initializeTeamsData()
-    }
-    
-  } catch (error) {
-    console.error('加载房间失败', error);
-    ElMessage.error(roomStore.error || '加载房间详情失败，请稍后重试')
-    
-    // 如果房间加载失败，返回到房间列表
-    setTimeout(() => {
-      router.push('/rooms')
-    }, 1500);
-  } finally {
-    // 延迟关闭加载状态，确保有足够的时间显示加载动画
-    setTimeout(() => {
-      isLoading.value = false
-    }, 500);
-  }
-}
-
-// 初始化队伍数据
-const initializeTeamsData = () => {
-  if (!room.value) return;
-  
-  // 创建默认队伍
-  room.value.teams = [
-    { id: 1, name: '一队', side: '赤', players: [] },
-    { id: 2, name: '二队', side: '蓝', players: [] }
-  ];
-  
-  // 将玩家分配到队伍
-  if (room.value.players && room.value.players.length > 0) {
-    room.value.players.forEach(player => {
-      if (player.teamId === 1) {
-        room.value.teams[0].players.push(player);
-      } else if (player.teamId === 2) {
-        room.value.teams[1].players.push(player);
-      }
-    });
-  }
-  
-  console.log('已初始化队伍数据:', room.value.teams);
-}
 
 // 将用户添加到观众席
 const addUserToSpectators = async () => {
@@ -739,6 +693,16 @@ const leaveRoom = async () => {
   console.log(`${userStore.username} 正在离开房间...`)
   
   try {
+    // 调用API离开房间
+    const success = await roomStore.leaveRoom()
+    
+    if (!success) {
+      throw new Error(roomStore.error || '离开房间失败')
+    }
+    
+    // 调用Socket离开房间
+    socketStore.leaveRoom()
+    
     // 如果是玩家，从玩家列表移除
     if (room.value.players) {
       const playerIndex = room.value.players.findIndex(p => p.userId === userStore.userId)
@@ -776,6 +740,55 @@ const leaveRoom = async () => {
     setTimeout(() => {
       router.push('/rooms')
     }, 1000)
+  }
+}
+
+// 踢出玩家
+const kickPlayer = async (targetUserId, targetUsername) => {
+  if (!isCreator.value) {
+    ElMessage.warning('只有房主才能踢出玩家')
+    return
+  }
+  
+  if (targetUserId === userStore.userId) {
+    ElMessage.warning('不能踢出自己')
+    return
+  }
+  
+  try {
+    // 显示确认对话框
+    await ElMessageBox.confirm(
+      `确定要将 ${targetUsername} 踢出房间吗？`,
+      '踢出确认',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+    
+    // 调用API踢出玩家
+    const success = await roomStore.kickPlayer(targetUserId)
+    
+    if (success) {
+      ElMessage.success(`已踢出 ${targetUsername}`)
+      addSystemMessage(`房主已将 ${targetUsername} 踢出房间`)
+      
+      // 从玩家列表和观众列表中移除
+      if (room.value.players) {
+        room.value.players = room.value.players.filter(p => p.userId !== targetUserId)
+      }
+      if (room.value.spectators) {
+        room.value.spectators = room.value.spectators.filter(s => s.userId !== targetUserId)
+      }
+    } else {
+      throw new Error(roomStore.error || '踢出玩家失败')
+    }
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('踢出玩家失败', error)
+      ElMessage.error(error.message || '踢出玩家失败')
+    }
   }
 }
 
@@ -1051,6 +1064,105 @@ watch(() => route.params.id, (newId, oldId) => {
   }
 })
 
+// 加载房间详情
+const loadRoomDetail = async () => {
+  if (!roomId.value) {
+    console.error('无法加载房间：没有房间ID')
+    ElMessage.error('无法加载房间：没有房间ID')
+    router.push('/rooms')
+    return
+  }
+  
+  isLoading.value = true
+  
+  try {
+    // 延迟一下，确保 isLoading 状态完全应用
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    console.log(`正在加载房间详情，ID: ${roomId.value}`)
+    const result = await roomStore.fetchRoomDetail(roomId.value)
+    
+    if (!result || !room.value) {
+      console.error('房间不存在或无法加载房间数据')
+      ElMessage.error('无法加载房间详情，可能不存在或已关闭')
+      // 延迟导航，给用户看到错误消息的时间
+      setTimeout(() => {
+        router.push('/rooms')
+      }, 1500);
+      return;
+    }
+    
+    console.log('房间详情加载成功:', room.value)
+    
+    // 确保有观众列表
+    if (!room.value.spectators) {
+      room.value.spectators = []
+    }
+    
+    // 确保有队伍列表
+    if (!room.value.teams) {
+      room.value.teams = [
+        { id: 1, name: '一队', side: null, players: [] },
+        { id: 2, name: '二队', side: null, players: [] }
+      ]
+    }
+    
+    // 确保玩家列表存在
+    if (!room.value.players) {
+      room.value.players = []
+    }
+    
+    // 检查用户是否已经在房间中
+    const isAlreadyInRoom = roomStore.isUserInRoom(room.value)
+    
+    if (!isAlreadyInRoom) {
+      // 如果用户不在房间中，尝试加入房间
+      const success = await roomStore.joinRoom(roomId.value)
+      
+      if (!success) {
+        ElMessage.error(roomStore.error || '加入房间失败')
+        setTimeout(() => {
+          router.push('/rooms')
+        }, 1500);
+        return;
+      }
+    } else {
+      console.log('用户已在房间中，无需再次加入')
+    }
+    
+    // 确保当前用户在房间中，如果不在，添加到观众席
+    if (currentUserId.value) {
+      const currentPlayer = room.value.players.find(p => p.userId === currentUserId.value)
+      const currentSpectator = room.value.spectators.find(s => s.userId === currentUserId.value)
+      
+      if (!currentPlayer && !currentSpectator) {
+        // 将用户添加到观众席
+        addUserToSpectators()
+      }
+    }
+    
+    // 如果房间状态为游戏中，但没有队伍信息，初始化队伍信息
+    if (room.value.status === 'in_progress' && (!room.value.teams || room.value.teams.length === 0)) {
+      // 初始化队伍数据
+      initializeTeamsData()
+    }
+    
+  } catch (error) {
+    console.error('加载房间失败', error);
+    ElMessage.error(roomStore.error || '加载房间详情失败，请稍后重试')
+    
+    // 如果房间加载失败，返回到房间列表
+    setTimeout(() => {
+      router.push('/rooms')
+    }, 1500);
+  } finally {
+    // 延迟关闭加载状态，确保有足够的时间显示加载动画
+    setTimeout(() => {
+      isLoading.value = false
+    }, 500);
+  }
+}
+
 </script>
 
 <template>
@@ -1215,6 +1327,16 @@ watch(() => route.params.id, (newId, oldId) => {
                   <div v-for="(spectator, index) in room.spectators || []" :key="spectator.userId" class="spectator-sidebar-item">
                     <img :src="spectator.avatar || getChampionIcon(index + 15)" alt="观众头像" class="spectator-avatar">
                     <span class="spectator-name">{{ spectator.username }}</span>
+                    <!-- 添加踢出按钮 -->
+                    <el-button 
+                      v-if="isCreator && spectator.userId !== userStore.userId"
+                      type="danger" 
+                      size="small" 
+                      @click="kickPlayer(spectator.userId, spectator.username)"
+                      :icon="Delete"
+                    >
+                      踢出
+                    </el-button>
                   </div>
                   
                   <div v-if="!room.spectators || room.spectators.length === 0" class="empty-spectators-sidebar">
@@ -1336,6 +1458,18 @@ watch(() => route.params.id, (newId, oldId) => {
                                 {{ player.status === 'ready' ? '已准备' : '未准备' }}
                               </div>
                             </div>
+                            
+                            <!-- 添加踢出按钮 -->
+                            <el-button 
+                              v-if="isCreator && player.userId !== userStore.userId"
+                              type="danger" 
+                              size="small" 
+                              class="kick-button"
+                              @click="kickPlayer(player.userId, player.username)"
+                              :icon="Delete"
+                            >
+                              踢出
+                            </el-button>
                           </div>
                           
                           <!-- 空位 -->
@@ -2385,6 +2519,7 @@ watch(() => route.params.id, (newId, oldId) => {
   border-radius: 8px;
   padding: 0.75rem;
   transition: all 0.3s;
+  position: relative;
 }
 
 .player-card:hover {
@@ -2839,9 +2974,12 @@ watch(() => route.params.id, (newId, oldId) => {
   border-radius: 20px;
   padding: 10px 15px;
   color: #fff;
-  margin-bottom: 10px;
-  transition: all 0.3s;
-  flex: 1;
+  margin: 0;
+}
+
+.chat-wrapper .chat-input input:focus {
+  border-color: #ff9800;
+  outline: none;
 }
 
 .chat-wrapper .chat-actions {
@@ -3481,5 +3619,240 @@ watch(() => route.params.id, (newId, oldId) => {
   color: #fff;
   border-bottom: 2px solid #ff9800;
   background-color: rgba(255, 152, 0, 0.1);
+}
+
+/* 玩家列表 -->
+<div class="players-list">
+  <h3>玩家列表 ({{ room.players.length }}/{{ room.maxPlayers }})</h3>
+  <div class="player-items">
+    <div v-for="player in room.players" :key="player.userId" class="player-item">
+      <div class="player-info">
+        <span class="player-name">{{ player.username }}</span>
+        <span v-if="player.userId === room.creatorId" class="creator-badge">房主</span>
+      </div>
+      <div class="player-actions">
+        <el-button 
+          v-if="isCreator && player.userId !== userStore.userId"
+          type="danger" 
+          size="small" 
+          @click="kickPlayer(player.userId, player.username)"
+          :icon="Delete"
+        >
+          踢出
+        </el-button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 观众列表 -->
+<div class="spectators-list">
+  <h3>观众列表 ({{ room.spectators.length }})</h3>
+  <div class="spectator-items">
+    <div v-for="spectator in room.spectators" :key="spectator.userId" class="spectator-item">
+      <div class="spectator-info">
+        <span class="spectator-name">{{ spectator.username }}</span>
+      </div>
+      <div class="spectator-actions">
+        <el-button 
+          v-if="isCreator && spectator.userId !== userStore.userId"
+          type="danger" 
+          size="small" 
+          @click="kickPlayer(spectator.userId, spectator.username)"
+          :icon="Delete"
+        >
+          踢出
+        </el-button>
+      </div>
+    </div>
+  </div>
+</div>
+
+.players-list,
+.spectators-list {
+  margin-bottom: 20px;
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  padding: 15px;
+}
+
+.players-list h3,
+.spectators-list h3 {
+  margin: 0 0 10px 0;
+  color: #ff9800;
+  font-size: 16px;
+}
+
+.player-items,
+.spectator-items {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.player-item,
+.spectator-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  transition: background-color 0.3s;
+}
+
+.player-item:hover,
+.spectator-item:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.player-info,
+.spectator-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.player-name,
+.spectator-name {
+  color: #fff;
+  font-size: 14px;
+}
+
+.creator-badge {
+  background-color: #ff9800;
+  color: #000;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.player-actions,
+.spectator-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* 确保踢出按钮样式正确 */
+.el-button--danger {
+  background-color: #f56c6c;
+  border-color: #f56c6c;
+  color: #fff;
+}
+
+.el-button--danger:hover {
+  background-color: #f78989;
+  border-color: #f78989;
+}
+
+/* 玩家列表和观众列表样式 */
+.players-sidebar,
+.spectators-sidebar {
+  margin-bottom: 20px;
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+  padding: 15px;
+}
+
+.players-sidebar .card-header,
+.spectators-sidebar .card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.players-sidebar .section-title,
+.spectators-sidebar .section-title {
+  margin: 0;
+  color: #ff9800;
+  font-size: 16px;
+}
+
+.players-sidebar-list,
+.spectators-sidebar-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.player-sidebar-item,
+.spectator-sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+  transition: background-color 0.3s;
+}
+
+.player-sidebar-item:hover,
+.spectator-sidebar-item:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.player-avatar,
+.spectator-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.player-name,
+.spectator-name {
+  color: #fff;
+  font-size: 14px;
+  flex: 1;
+}
+
+.creator-badge {
+  background-color: #ff9800;
+  color: #000;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.empty-players-sidebar,
+.empty-spectators-sidebar {
+  text-align: center;
+  color: rgba(255, 255, 255, 0.5);
+  padding: 10px;
+  font-style: italic;
+}
+
+/* 确保踢出按钮样式正确 */
+.el-button--danger {
+  background-color: #f56c6c;
+  border-color: #f56c6c;
+  color: #fff;
+}
+
+.el-button--danger:hover {
+  background-color: #f78989;
+  border-color: #f78989;
+}
+
+/* 踢出按钮样式 */
+.kick-button {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  padding: 4px 8px;
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.player-card:hover .kick-button {
+  opacity: 1;
+}
+
+.player-card {
+  position: relative;
 }
 </style>

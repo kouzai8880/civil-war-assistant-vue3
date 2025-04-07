@@ -1,14 +1,47 @@
 <script setup>
 import { RouterView } from 'vue-router'
 import MainLayout from './layouts/MainLayout.vue'
-import { ref, onMounted, provide } from 'vue'
+import { ref, onMounted, provide, watch } from 'vue'
 import { ElConfigProvider, ElAlert, ElButton } from 'element-plus'
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 import { userApi } from './services/api'
+import { useUserStore } from './stores/user'
+import { useSocketStore } from './stores/socket'
 
 // API错误状态
 const apiError = ref(false)
 const apiErrorMessage = ref('')
+
+// 获取store
+const userStore = useUserStore()
+const socketStore = useSocketStore()
+
+// 监听登录状态变化
+watch(() => userStore.isLoggedIn, async (isLoggedIn) => {
+  if (isLoggedIn) {
+    // 用户登录时，初始化WebSocket连接
+    try {
+      const connected = await socketStore.connect()
+      if (!connected) {
+        console.warn('WebSocket连接失败，将在用户进行交互时重试')
+        // 添加重试逻辑
+        const retryConnection = async () => {
+          if (!socketStore.isConnected) {
+            await socketStore.connect()
+          }
+        }
+        // 监听用户交互事件
+        window.addEventListener('click', retryConnection, { once: true })
+        window.addEventListener('keydown', retryConnection, { once: true })
+      }
+    } catch (error) {
+      console.error('WebSocket连接初始化失败:', error)
+    }
+  } else {
+    // 用户登出时，断开WebSocket连接
+    socketStore.disconnect()
+  }
+})
 
 // 检查API连接状态
 const checkApiConnection = async () => {

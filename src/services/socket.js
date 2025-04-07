@@ -9,9 +9,10 @@ const SOCKET_URL = 'https://dvmxujshaduv.sealoshzh.site'
 /**
  * 连接WebSocket
  * @param {string} token - 用户认证token
+ * @param {string} avatar - 用户头像URL
  * @returns {Promise} 连接结果Promise
  */
-export const connectSocket = (token) => {
+export const connectSocket = (token, avatar = '') => {
   return new Promise((resolve, reject) => {
     try {
       // 验证token是否有效
@@ -29,12 +30,18 @@ export const connectSocket = (token) => {
       // 连接WebSocket服务器
       console.log('正在连接WebSocket服务器...')
       socket = io(SOCKET_URL, {
-        transports: ['websocket'],
-        auth: { token }, // 使用 auth 对象传递 token，这是推荐的做法
+        auth: { token },
+        query: { avatar },
         reconnection: true,
         reconnectionAttempts: 5,
         reconnectionDelay: 1000,
-        timeout: 10000
+        timeout: 10000,
+        transports: ['websocket'],  // 强制使用WebSocket传输
+        extraHeaders: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        },
+        maxHttpBufferSize: 1e8  // 增加缓冲区大小到100MB
       })
       
       // 连接成功
@@ -46,16 +53,16 @@ export const connectSocket = (token) => {
       // 连接错误
       socket.on('connect_error', (error) => {
         console.error('WebSocket连接错误:', error)
+        // 确保在连接错误时清理socket实例
+        if (socket) {
+          socket.disconnect()
+          socket = null
+        }
         reject(new Error('WebSocket连接错误: ' + (error.message || '')))
         
         // 如果错误与认证相关，在控制台打印明确信息
         if (error.message && error.message.includes('认证失败')) {
           console.error('WebSocket认证错误: 请检查token是否有效')
-          // 断开并清理连接
-          if (socket) {
-            socket.disconnect()
-            socket = null
-          }
         }
       })
       
@@ -88,86 +95,120 @@ export const disconnectSocket = () => {
  */
 export const getSocket = () => socket
 
-/**
- * 加入房间
- * @param {string} roomId - 房间ID
- */
-export const joinRoom = (roomId) => {
-  if (!socket || !socket.connected) {
-    console.error('WebSocket未连接，无法加入房间')
-    return
+// 大厅相关方法
+export const lobbyApi = {
+  // 加入大厅
+  joinLobby: () => {
+    if (!socket?.connected) {
+      console.error('WebSocket未连接，无法加入大厅')
+      return
+    }
+    console.log('加入大厅')
+    socket.emit('joinLobby')
+  },
+
+  // 离开大厅
+  leaveLobby: () => {
+    if (!socket?.connected) {
+      console.error('WebSocket未连接，无法离开大厅')
+      return
+    }
+    console.log('离开大厅')
+    socket.emit('leaveLobby')
+  },
+
+  // 发送大厅消息
+  sendLobbyMessage: (content, type = 'text') => {
+    if (!socket?.connected) {
+      console.error('WebSocket未连接，无法发送大厅消息')
+      return
+    }
+    console.log('发送大厅消息:', { content, type })
+    socket.emit('lobbyMessage', { content, type })
+  },
+
+  // 获取聊天历史
+  getLobbyHistory: (before, limit) => {
+    if (!socket?.connected) {
+      console.error('WebSocket未连接，无法获取聊天历史')
+      return
+    }
+    console.log('获取大厅聊天历史:', { before, limit })
+    socket.emit('getLobbyHistory', { before, limit })
   }
-  
-  console.log('加入房间:', roomId)
-  socket.emit('joinRoom', { roomId })
 }
 
-/**
- * 离开房间
- * @param {string} roomId - 房间ID
- */
-export const leaveRoom = (roomId) => {
-  if (!socket || !socket.connected) {
-    console.error('WebSocket未连接，无法离开房间')
-    return
+// 房间相关方法
+export const roomApi = {
+  // 加入房间
+  joinRoom: (roomId) => {
+    if (!socket?.connected) {
+      console.error('WebSocket未连接，无法加入房间')
+      return
+    }
+    console.log('加入房间:', roomId)
+    socket.emit('joinRoom', { roomId })
+  },
+
+  // 离开房间
+  leaveRoom: (roomId) => {
+    if (!socket?.connected) {
+      console.error('WebSocket未连接，无法离开房间')
+      return
+    }
+    console.log('离开房间:', roomId)
+    socket.emit('leaveRoom', { roomId })
+  },
+
+  // 发送房间消息
+  sendRoomMessage: (roomId, content, type = 'text') => {
+    if (!socket?.connected) {
+      console.error('WebSocket未连接，无法发送房间消息')
+      return
+    }
+    console.log('发送房间消息:', { roomId, content, type })
+    socket.emit('roomMessage', { roomId, content, type })
   }
-  
-  console.log('离开房间:', roomId)
-  socket.emit('leaveRoom', { roomId })
 }
 
-/**
- * 发送语音状态更新
- * @param {string} roomId - 房间ID
- * @param {boolean} isMuted - 是否静音
- */
-export const updateVoiceStatus = (roomId, isMuted) => {
-  if (!socket || !socket.connected) {
-    console.error('WebSocket未连接，无法更新语音状态')
-    return
-  }
-  
-  console.log('更新语音状态:', { roomId, isMuted })
-  socket.emit('voiceStatus', { roomId, isMuted })
-}
+// 语音相关方法
+export const voiceApi = {
+  // 开始语音通话
+  startVoice: (roomId) => {
+    if (!socket?.connected) {
+      console.error('WebSocket未连接，无法开始语音通话')
+      return
+    }
+    console.log('开始语音通话:', roomId)
+    socket.emit('voiceStart', { roomId })
+  },
 
-/**
- * 发送准备状态更新
- * @param {string} roomId - 房间ID
- * @param {boolean} isReady - 是否准备好
- */
-export const updateReadyStatus = (roomId, isReady) => {
-  if (!socket || !socket.connected) {
-    console.error('WebSocket未连接，无法更新准备状态')
-    return
-  }
-  
-  console.log('更新准备状态:', { roomId, isReady })
-  socket.emit('readyStatus', { roomId, isReady })
-}
+  // 结束语音通话
+  endVoice: (roomId) => {
+    if (!socket?.connected) {
+      console.error('WebSocket未连接，无法结束语音通话')
+      return
+    }
+    console.log('结束语音通话:', roomId)
+    socket.emit('voiceEnd', { roomId })
+  },
 
-/**
- * 发送聊天消息到房间
- * @param {string} roomId - 房间ID
- * @param {string} message - 消息内容
- */
-export const sendRoomMessage = (roomId, message) => {
-  if (!socket || !socket.connected) {
-    console.error('WebSocket未连接，无法发送消息')
-    return
+  // 静音控制
+  setMute: (roomId, isMuted) => {
+    if (!socket?.connected) {
+      console.error('WebSocket未连接，无法更新静音状态')
+      return
+    }
+    console.log('更新静音状态:', { roomId, isMuted })
+    socket.emit('voiceMute', { roomId, isMuted })
   }
-  
-  console.log('发送房间消息:', { roomId, message })
-  socket.emit('chatMessage', { roomId, message })
 }
 
 export default {
   connectSocket,
   disconnectSocket,
   getSocket,
-  joinRoom,
-  leaveRoom,
-  updateVoiceStatus,
-  updateReadyStatus,
-  sendRoomMessage
+  lobbyApi,
+  roomApi,
+  voiceApi
 } 

@@ -142,6 +142,16 @@ const joinRoom = async (room) => {
   try {
     isLoading.value = true
     
+    // 检查用户是否已经在房间中（作为玩家或观众）
+    const isAlreadyInRoom = room.players && room.players.some(player => player.userId === userStore.userId);
+    const isSpectator = room.spectators && room.spectators.some(spectator => spectator.userId === userStore.userId);
+    
+    if (isAlreadyInRoom || isSpectator) {
+      console.log('用户已在房间中，直接跳转到房间详情页');
+      router.push(`/room/${room.id}`);
+      return;
+    }
+    
     // 检查房间是否需要密码
     let password = null;
     if (room.hasPassword) {
