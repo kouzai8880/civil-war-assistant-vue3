@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, computed, watch, nextTick } from 'vue'
+import { ref, onMounted, computed, watch, nextTick, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useUserStore } from '../stores/user'
 import { useRoomStore } from '../stores/room'
@@ -368,6 +368,9 @@ const autoPickForTeam = (teamId) => {
   }
 }
 
+// 刷新定时器
+const refreshInterval = ref(null)
+
 // 加载房间数据
 onMounted(async () => {
   if (!userStore.isLoggedIn) {
@@ -376,7 +379,36 @@ onMounted(async () => {
     return
   }
   
-  loadRoomDetail()
+  await loadRoomDetail()
+  
+  // 设置定期刷新
+  setupRefreshInterval()
+})
+
+// 设置定期刷新
+const setupRefreshInterval = () => {
+  // 清除可能已存在的定时器
+  if (refreshInterval.value) {
+    clearInterval(refreshInterval.value)
+  }
+  
+  // 设置新的定时器，每5秒刷新一次
+  refreshInterval.value = setInterval(() => {
+    if (roomId.value) {
+      console.log('定时刷新房间数据...')
+      roomStore.fetchRoomDetail(roomId.value)
+    }
+  }, 5000)
+  
+  console.log('已设置房间数据定时刷新')
+}
+
+// 组件卸载时清除定时器
+onUnmounted(() => {
+  if (refreshInterval.value) {
+    clearInterval(refreshInterval.value)
+    console.log('已清除房间数据定时刷新')
+  }
 })
 
 // 加载房间详情
@@ -489,20 +521,21 @@ const addUserToSpectators = async () => {
   if (!room.value || !room.value.spectators || !userStore.userId) return
 
   try {
-    // 创建用户数据
-    const userData = {
-      userId: userStore.userId,
-      username: userStore.username,
-      avatar: userStore.avatar || getChampionIcon(8)
+    // 调用加入观众席API
+    const success = await roomStore.joinAsSpectator(roomId.value)
+    
+    if (success) {
+      console.log('成功加入观众席')
+      ElMessage.success('已进入观众席')
+      
+      // 重新加载房间数据以获取最新状态
+      await loadRoomDetail()
+    } else {
+      throw new Error(roomStore.error || '加入观众席失败')
     }
-    
-    // 将用户添加到观众席
-    room.value.spectators.push(userData)
-    
-    // 添加系统消息
-    addSystemMessage(`${userStore.username} 进入了观众席`)
   } catch (error) {
-    ElMessage.error('加入观众席失败')
+    console.error('加入观众席失败:', error)
+    ElMessage.error(error.message || '加入观众席失败，请稍后重试')
   }
 }
 
@@ -511,36 +544,33 @@ const joinRoom = async () => {
   if (!room.value) return
   
   // 检查玩家数量是否已满
-  if (room.value.players.length >= 10) {
+  if (room.value.players && room.value.players.length >= (room.value.playerCount || 10)) {
     ElMessage.warning('对局已满员')
     return
   }
   
+  isLoading.value = true
+  
   try {
-    // 创建玩家数据
-    const playerData = {
-      userId: userStore.userId,
-      username: userStore.username,
-      avatar: userStore.avatar || 'getChampionIcon(8)',
-      status: 'not-ready',
-      // 初始不分配到任何队伍
-      teamId: null,
-      isCaptain: false
+    console.log(`用户 ${userStore.username} 正在调用API加入房间 ${roomId.value}...`)
+    
+    // 调用API加入房间（从观众席到玩家列表）
+    const success = await roomStore.joinAsPlayer(roomId.value)
+    
+    if (success) {
+      console.log('成功加入房间，服务端返回的房间数据:', room.value)
+      ElMessage.success('已加入对局')
+      
+      // 重新加载房间数据以获取最新状态
+      await loadRoomDetail()
+    } else {
+      throw new Error(roomStore.error || '加入房间失败')
     }
-    
-    // 从观众席移除用户
-    const spectatorIndex = room.value.spectators.findIndex(s => s.userId === currentUserId.value)
-    if (spectatorIndex !== -1) {
-      room.value.spectators.splice(spectatorIndex, 1)
-    }
-    
-    // 添加到玩家列表
-    room.value.players.push(playerData)
-    
-    // 添加系统消息
-    addSystemMessage(`${userStore.username} 加入了对局`)
   } catch (error) {
-    ElMessage.error('加入对局失败')
+    console.error('加入对局失败:', error)
+    ElMessage.error(error.message || '加入对局失败，请稍后重试')
+  } finally {
+    isLoading.value = false
   }
 }
 
@@ -1097,17 +1127,6 @@ watch(() => route.params.id, (newId, oldId) => {
             
             <!-- 房间操作按钮 -->
             <div class="room-actions">
-              <!-- 如果是观众且队伍未满，显示加入队伍按钮 -->
-              <template v-if="isSpectator && !isTeamFull && room.status === 'waiting'">
-                <el-button 
-                  type="primary"
-                  @click="joinRoom"
-                  class="action-btn"
-                >
-                  加入对局
-                </el-button>
-              </template>
-              
               <!-- 如果是队伍成员，显示准备按钮 -->
               <el-button 
                 v-if="!isSpectator && room.status === 'waiting'" 
@@ -1177,6 +1196,19 @@ watch(() => route.params.id, (newId, oldId) => {
               <div class="spectators-sidebar">
                 <div class="card-header">
                   <h2 class="section-title">观众席 ({{ room.spectators?.length || 0 }})</h2>
+                  
+                  <div class="header-buttons">
+                    <!-- 如果当前用户在玩家列表中，显示加入观众席按钮 -->
+                    <el-button 
+                      v-if="!isSpectator && room.status === 'waiting'"
+                      type="primary"
+                      size="small"
+                      class="join-spectator-btn"
+                      @click="addUserToSpectators"
+                    >
+                      观看模式
+                    </el-button>
+                  </div>
                 </div>
                 
                 <div class="spectators-sidebar-list">
@@ -1270,6 +1302,19 @@ watch(() => route.params.id, (newId, oldId) => {
                       <div class="section-card players-container" v-if="room.status === 'waiting'">
                         <div class="card-header">
                           <h2 class="section-title">玩家列表 ({{ room.players?.length || 0 }}/10)</h2>
+                          
+                          <div class="header-buttons">
+                            <!-- 如果当前用户是观众且队伍未满，显示加入队伍按钮 -->
+                            <el-button 
+                              v-if="isSpectator && room.status === 'waiting' && !isTeamFull"
+                              type="success"
+                              size="small"
+                              class="join-team-btn"
+                              @click="joinRoom"
+                            >
+                              加入队伍
+                            </el-button>
+                          </div>
                         </div>
                         
                         <div class="player-grid">
@@ -3145,23 +3190,43 @@ watch(() => route.params.id, (newId, oldId) => {
 .spectator-sidebar-item {
   display: flex;
   align-items: center;
-  padding: 0.5rem;
+  padding: 8px 10px;
   border-radius: 8px;
-  margin-bottom: 0.5rem;
-  background-color: rgba(255, 255, 255, 0.05);
-  transition: all 0.3s;
+  margin-bottom: 8px;
+  background-color: rgba(255, 255, 255, 0.03);
+  transition: all 0.2s;
 }
 
 .spectator-sidebar-item:hover {
-  transform: translateY(-2px);
-  background-color: rgba(255, 255, 255, 0.08);
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.spectator-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  margin-right: 10px;
+  object-fit: cover;
+}
+
+.spectator-name {
+  font-size: 0.9rem;
+  color: #fff;
+  flex: 1;
+}
+
+.join-team-btn {
+  margin-left: auto;
+}
+
+.join-spectator-btn {
+  font-size: 0.8rem;
 }
 
 .empty-spectators-sidebar {
-  padding: 1rem;
+  padding: 20px;
   text-align: center;
-  color: #8b8fa3;
-  font-style: italic;
+  color: #a0a0a0;
 }
 
 /* 主区域聊天室样式 */

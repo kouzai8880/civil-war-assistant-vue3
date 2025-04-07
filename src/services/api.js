@@ -517,17 +517,67 @@ export const roomApi = {
   },
   
   // 加入房间
-  joinRoom: async (roomId, userData) => {
-    console.log('API方法调用: roomApi.joinRoom', { roomId, userData });
+  joinRoom: async (roomId, userData = {}) => {
+    console.log('API方法调用: roomApi.joinRoom', { roomId });
+    
+    // 根据API规范，只需要传递password参数（如果有密码）
+    // API: POST /rooms/{roomId}/join 
+    // 参数: { "password": "123456" } // 如果房间有密码
+    
+    let data = {};
+    if (userData.password) {
+      data.password = userData.password;
+    }
     
     try {
-      const response = await apiClient.post(`/rooms/${roomId}/join`, userData);
+      console.log('发送加入房间请求:', { roomId, hasPassword: !!userData.password });
+      const response = await apiClient.post(`/rooms/${roomId}/join`, data);
+      console.log('加入房间成功, 响应:', response.data);
       return {
         status: response.status || 'success',
         data: response.data,
         message: response.message
       };
     } catch (error) {
+      console.error('加入房间API调用失败:', error.response?.data || error.message);
+      throw error;
+    }
+  },
+  
+  // 从观众席加入玩家列表
+  joinAsPlayer: async (roomId) => {
+    console.log('API方法调用: roomApi.joinAsPlayer', { roomId });
+    
+    try {
+      console.log('发送加入玩家列表请求:', { roomId });
+      const response = await apiClient.post(`/rooms/${roomId}/join-as-player`);
+      console.log('加入玩家列表成功, 响应:', response.data);
+      return {
+        status: response.status || 'success',
+        data: response.data,
+        message: response.message || '已从观众席加入玩家列表'
+      };
+    } catch (error) {
+      console.error('加入玩家列表API调用失败:', error.response?.data || error.message);
+      throw error;
+    }
+  },
+  
+  // 从玩家列表进入观众席
+  joinAsSpectator: async (roomId) => {
+    console.log('API方法调用: roomApi.joinAsSpectator', { roomId });
+    
+    try {
+      console.log('发送加入观众席请求:', { roomId });
+      const response = await apiClient.post(`/rooms/${roomId}/join-as-spectator`);
+      console.log('加入观众席成功, 响应:', response.data);
+      return {
+        status: response.status || 'success',
+        data: response.data,
+        message: response.message || '已从玩家列表进入观众席'
+      };
+    } catch (error) {
+      console.error('加入观众席API调用失败:', error.response?.data || error.message);
       throw error;
     }
   },

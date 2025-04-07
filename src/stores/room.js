@@ -146,8 +146,9 @@ export const useRoomStore = defineStore('room', () => {
   // 获取房间详情
   const fetchRoomDetail = async (roomId) => {
     if (!roomId) {
-      console.error('获取房间详情失败: 缺少roomId参数')
-      error.value = '无效的房间ID'
+      console.error('无法获取房间详情：缺少房间ID')
+      error.value = '缺少房间ID'
+      currentRoom.value = null
       return null
     }
     
@@ -155,31 +156,34 @@ export const useRoomStore = defineStore('room', () => {
     error.value = null
     
     try {
-      console.log(`获取房间详情: 正在获取房间 ${roomId} 的信息`)
+      console.log(`正在获取房间 ${roomId} 的详情`)
       const response = await roomApi.getRoomDetail(roomId)
       
       if (response.status === 'success' && response.data) {
-        // 检查是否有房间数据
-        console.log('房间详情获取成功, 原始数据:', response.data)
+        console.log('服务器返回的原始房间数据:', response.data)
         
-        // 确保数据的格式一致性
-        const roomData = {
-          ...response.data,
-          players: response.data.players || [],
-          teams: response.data.teams || [],
-          spectators: response.data.spectators || [],
-          messages: response.data.messages || []
-        }
+        // 完全重置房间数据，不保留旧数据
+        const roomData = response.data
         
-        console.log('房间详情处理后数据:', roomData)
+        // 确保关键属性总是有值，防止前端报错
+        roomData.players = roomData.players || []
+        roomData.teams = roomData.teams || []
+        roomData.spectators = roomData.spectators || []
+        roomData.messages = roomData.messages || []
+        
+        // 更新当前房间数据
         currentRoom.value = roomData
+        console.log('处理后的房间数据:', currentRoom.value)
+        
         return roomData
       } else {
-        throw new Error(response.message || '获取房间详情失败：服务器返回错误')
+        console.error('获取房间详情失败:', response.message || '未知错误')
+        throw new Error(response.message || '获取房间详情失败')
       }
     } catch (err) {
       console.error('获取房间详情失败:', err)
       error.value = err.message || '获取房间详情失败，请稍后重试'
+      // 出错时清空当前房间数据，避免使用旧数据
       currentRoom.value = null
       return null
     } finally {
@@ -188,7 +192,7 @@ export const useRoomStore = defineStore('room', () => {
   }
 
   // 加入房间
-  const joinRoom = async (roomId, teamPreference) => {
+  const joinRoom = async (roomId, password = null) => {
     if (!userStore.isLoggedIn) {
       error.value = '请先登录'
       return false
@@ -198,14 +202,20 @@ export const useRoomStore = defineStore('room', () => {
     error.value = null
     
     try {
-      const response = await roomApi.joinRoom(roomId, {
-        userId: userStore.userId,
-        username: userStore.username,
-        teamPreference
-      })
+      console.log(`用户 ${userStore.username} (${userStore.userId}) 尝试加入房间 ${roomId}`)
+      
+      // 只传递密码参数（如果有）
+      const userData = password ? { password } : {};
+      
+      const response = await roomApi.joinRoom(roomId, userData)
       
       if (response.status === 'success') {
-        currentRoom.value = response.data
+        console.log('成功加入房间，更新当前房间数据')
+        currentRoom.value = response.data.room || response.data
+        
+        // 立即重新获取房间详情以确保数据最新
+        await fetchRoomDetail(roomId)
+        
         return true
       } else {
         throw new Error(response.message || '加入房间失败')
@@ -308,6 +318,84 @@ export const useRoomStore = defineStore('room', () => {
     }
   }
 
+  // 从观众席加入玩家列表
+  const joinAsPlayer = async (roomId) => {
+    if (!userStore.isLoggedIn) {
+      error.value = '请先登录'
+      return false
+    }
+    
+    if (!roomId) {
+      error.value = '房间ID不能为空'
+      return false
+    }
+    
+    loading.value = true
+    error.value = null
+    
+    try {
+      console.log(`用户 ${userStore.username} 尝试从观众席加入玩家列表, 房间ID: ${roomId}`)
+      const response = await roomApi.joinAsPlayer(roomId)
+      
+      if (response.status === 'success') {
+        console.log('成功加入玩家列表，更新当前房间数据')
+        currentRoom.value = response.data.room || response.data
+        
+        // 立即重新获取房间详情以确保数据最新
+        await fetchRoomDetail(roomId)
+        
+        return true
+      } else {
+        throw new Error(response.message || '加入玩家列表失败')
+      }
+    } catch (err) {
+      console.error('加入玩家列表失败:', err)
+      error.value = err.message || '加入玩家列表失败，请稍后重试'
+      return false
+    } finally {
+      loading.value = false
+    }
+  }
+
+  // 从玩家列表进入观众席
+  const joinAsSpectator = async (roomId) => {
+    if (!userStore.isLoggedIn) {
+      error.value = '请先登录'
+      return false
+    }
+    
+    if (!roomId) {
+      error.value = '房间ID不能为空'
+      return false
+    }
+    
+    loading.value = true
+    error.value = null
+    
+    try {
+      console.log(`用户 ${userStore.username} 尝试从玩家列表进入观众席, 房间ID: ${roomId}`)
+      const response = await roomApi.joinAsSpectator(roomId)
+      
+      if (response.status === 'success') {
+        console.log('成功进入观众席，更新当前房间数据')
+        currentRoom.value = response.data.room || response.data
+        
+        // 立即重新获取房间详情以确保数据最新
+        await fetchRoomDetail(roomId)
+        
+        return true
+      } else {
+        throw new Error(response.message || '进入观众席失败')
+      }
+    } catch (err) {
+      console.error('进入观众席失败:', err)
+      error.value = err.message || '进入观众席失败，请稍后重试'
+      return false
+    } finally {
+      loading.value = false
+    }
+  }
+
   return {
     // 状态
     rooms,
@@ -328,6 +416,8 @@ export const useRoomStore = defineStore('room', () => {
     joinRoom,
     leaveRoom,
     startGame,
-    updateRoomSettings
+    updateRoomSettings,
+    joinAsPlayer,
+    joinAsSpectator
   }
 }) 

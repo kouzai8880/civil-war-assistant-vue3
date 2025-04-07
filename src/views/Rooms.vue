@@ -126,7 +126,7 @@ const handleSizeChange = (size) => {
 }
 
 // 加入房间
-const joinRoom = (room) => {
+const joinRoom = async (room) => {
   if (room.status !== 'waiting') {
     ElMessage.warning('该房间不在等待状态，无法加入')
     return
@@ -137,9 +137,40 @@ const joinRoom = (room) => {
     return
   }
   
-  console.log('加入房间:', room.id, room.name)
+  console.log('准备加入房间:', room.id, room.name)
   
-  router.push(`/room/${room.id}`)
+  try {
+    isLoading.value = true
+    
+    // 检查房间是否需要密码
+    let password = null;
+    if (room.hasPassword) {
+      // 如果需要密码，弹出密码输入框
+      // 这里简化处理，实际应该用ElementUI的输入框组件
+      password = prompt('请输入房间密码:');
+      if (!password) {
+        // 用户取消了输入
+        isLoading.value = false;
+        return;
+      }
+    }
+    
+    // 调用API加入房间，只传递密码参数
+    const success = await roomStore.joinRoom(room.id, password)
+    
+    if (success) {
+      ElMessage.success('成功加入房间')
+      // 导航到房间详情页
+      router.push(`/room/${room.id}`)
+    } else {
+      throw new Error(roomStore.error || '加入房间失败')
+    }
+  } catch (error) {
+    console.error('加入房间失败:', error)
+    ElMessage.error(error.message || '加入房间失败，请稍后重试')
+  } finally {
+    isLoading.value = false
+  }
 }
 
 // 处理创建房间

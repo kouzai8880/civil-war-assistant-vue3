@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useUserStore } from '../stores/user'
 import { useRoomStore } from '../stores/room'
 import CreateRoomModal from '../components/CreateRoomModal.vue'
+import { ElMessage } from 'element-plus'
 
 // 常用的英雄头像列表，用于随机分配
 const championIcons = [
@@ -96,11 +97,45 @@ const handleRoomCreated = (roomData) => {
 }
 
 // 加入房间
-const joinRoom = (roomId) => {
-  if (isLoggedIn.value) {
-    router.push(`/room/${roomId}`)
-  } else {
+const joinRoom = async (roomId) => {
+  if (!userStore.isLoggedIn) {
+    ElMessage.warning('请先登录')
     router.push('/login')
+    return
+  }
+  
+  try {
+    isLoading.value = true
+    
+    // 获取房间信息，检查是否需要密码
+    const room = hotRooms.value.find(r => r.id === roomId);
+    let password = null;
+    
+    if (room && room.hasPassword) {
+      // 如果需要密码，弹出密码输入框
+      password = prompt('请输入房间密码:');
+      if (!password) {
+        // 用户取消了输入
+        isLoading.value = false;
+        return;
+      }
+    }
+    
+    // 调用API加入房间，只传递密码参数
+    const success = await roomStore.joinRoom(roomId, password)
+    
+    if (success) {
+      ElMessage.success('成功加入房间')
+      // 导航到房间详情页
+      router.push(`/room/${roomId}`)
+    } else {
+      throw new Error(roomStore.error || '加入房间失败')
+    }
+  } catch (error) {
+    console.error('加入房间失败:', error)
+    ElMessage.error(error.message || '加入房间失败，请稍后重试')
+  } finally {
+    isLoading.value = false
   }
 }
 

@@ -58,26 +58,6 @@ onMounted(() => {
 <template>
   <div class="app">
     <el-config-provider :locale="zhCn">
-      <!-- API错误提示 -->
-      <div v-if="apiError" class="api-error-banner">
-        <el-alert
-          title="API连接错误"
-          type="error"
-          :closable="false"
-          show-icon
-        >
-          <template #default>
-            后端API服务无法连接，部分功能可能不可用。{{ apiErrorMessage }}
-            <el-button
-              type="text"
-              size="small"
-              @click="retryApiConnection"
-            >
-              重试连接
-            </el-button>
-          </template>
-        </el-alert>
-      </div>
       <!-- 路由容器 -->
       <MainLayout>
         <RouterView />
