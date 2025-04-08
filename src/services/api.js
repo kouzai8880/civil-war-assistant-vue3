@@ -1,4 +1,6 @@
 import axios from 'axios';
+import { getSocket } from './socket';
+import { getToken } from './auth';
 
 // 创建axios实例
 const apiClient = axios.create({
@@ -527,28 +529,21 @@ export const roomApi = {
   joinRoom: async (roomId, userData = {}) => {
     console.log('API方法调用: roomApi.joinRoom', { roomId });
     
-    // 根据API规范，只需要传递password参数（如果有密码）
-    // API: POST /rooms/{roomId}/join 
-    // 参数: { "password": "123456" } // 如果房间有密码
-    
-    let data = {};
-    if (userData.password) {
-      data.password = userData.password;
+    // 使用 WebSocket 加入房间
+    const socket = getSocket();
+    if (!socket) {
+      throw new Error('WebSocket未连接');
     }
     
-    try {
-      console.log('发送加入房间请求:', { roomId, hasPassword: !!userData.password });
-      const response = await apiClient.post(`/rooms/${roomId}/join`, data);
-      console.log('加入房间成功, 响应:', response.data);
-      return {
-        status: response.status || 'success',
-        data: response.data,
-        message: response.message
-      };
-    } catch (error) {
-      console.error('加入房间API调用失败:', error.response?.data || error.message);
-      throw error;
-    }
+    return new Promise((resolve, reject) => {
+      socket.emit('joinRoom', { roomId, ...userData }, (response) => {
+        if (response.error) {
+          reject(new Error(response.error));
+        } else {
+          resolve(response);
+        }
+      });
+    });
   },
   
   // 从观众席加入玩家列表
@@ -751,7 +746,22 @@ export const chatApi = {
   // 发送聊天消息
   sendMessage: (roomId, data = {}) => {
     console.log('API方法调用: chatApi.sendMessage', { roomId, data });
-    return apiClient.post(`/rooms/${roomId}/messages`, data);
+    
+    // 使用 WebSocket 发送消息
+    const socket = getSocket();
+    if (!socket) {
+      throw new Error('WebSocket未连接');
+    }
+    
+    return new Promise((resolve, reject) => {
+      socket.emit('roomMessage', { roomId, ...data }, (response) => {
+        if (response.error) {
+          reject(new Error(response.error));
+        } else {
+          resolve(response);
+        }
+      });
+    });
   },
   
   // 获取大厅聊天记录
@@ -763,7 +773,22 @@ export const chatApi = {
   // 发送大厅聊天消息
   sendLobbyMessage: (data = {}) => {
     console.log('API方法调用: chatApi.sendLobbyMessage', { data });
-    return apiClient.post('/lobby/chat', data);
+    
+    // 使用 WebSocket 发送大厅消息
+    const socket = getSocket();
+    if (!socket) {
+      throw new Error('WebSocket未连接');
+    }
+    
+    return new Promise((resolve, reject) => {
+      socket.emit('lobbyMessage', data, (response) => {
+        if (response.error) {
+          reject(new Error(response.error));
+        } else {
+          resolve(response);
+        }
+      });
+    });
   }
 };
 

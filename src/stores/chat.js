@@ -20,6 +20,7 @@ export const useChatStore = defineStore('chat', () => {
   const isMuted = ref(false)
   const isLoading = ref(false)
   const error = ref(null)
+  const currentRoomId = ref(null)
 
   // 计算属性
   const filteredMessages = computed(() => {
@@ -59,28 +60,27 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   // 发送消息 - 房间
-  const sendRoomMsg = async (roomId, content, channel = activeChannel.value, type = 'text') => {
+  const sendRoomMsg = async (content, type = 'text') => {
     isLoading.value = true
     error.value = null
     
     try {
-      // 通过WebSocket发送消息
-      sendRoomMessage(roomId, content, type)
-      
-      // 也通过API发送以确保消息被保存
-      const data = { content, type, channel }
-      if (channel.startsWith('team-')) {
-        data.teamId = parseInt(channel.replace('team-', ''))
+      // 获取当前房间ID
+      const roomId = currentRoomId.value
+      if (!roomId) {
+        throw new Error('未加入房间，无法发送消息')
       }
       
-      await chatApi.sendMessage(roomId, data)
+      // 通过 WebSocket 发送消息
+      console.log('通过 WebSocket 发送房间消息:', { roomId, content, type })
+      sendRoomMessage(roomId, content, type)
       
       // 本地添加消息，给用户立即反馈
       const message = {
         id: Date.now().toString(),
         roomId,
         content,
-        channel,
+        channel: activeChannel.value,
         type,
         time: new Date().toISOString(),
         isSending: false
@@ -203,6 +203,7 @@ export const useChatStore = defineStore('chat', () => {
   const setupChatListeners = () => {
     // 监听大厅新消息
     on('lobbyMessage', (data) => {
+      console.log('[WebSocket] 收到大厅消息:', data)
       receiveMessage({
         id: data.id,
         userId: data.userId,
@@ -217,6 +218,7 @@ export const useChatStore = defineStore('chat', () => {
     
     // 监听房间新消息
     on('roomMessage', (data) => {
+      console.log('[WebSocket] 收到房间消息:', data)
       receiveMessage({
         id: data.id,
         roomId: data.roomId,
@@ -230,15 +232,27 @@ export const useChatStore = defineStore('chat', () => {
       })
     })
     
+    // 监听房间加入事件
+    on('roomJoined', (data) => {
+      console.log('[WebSocket] 加入房间成功:', data)
+      currentRoomId.value = data.roomId
+    })
+    
+    // 监听房间离开事件
+    on('roomLeft', () => {
+      console.log('[WebSocket] 离开房间')
+      currentRoomId.value = null
+    })
+    
     // 监听语音状态更新
     on('voiceStateUpdate', (data) => {
-      console.log('语音状态更新:', data)
+      console.log('[WebSocket] 语音状态更新:', data)
       // 这里可以添加语音状态更新的处理逻辑
     })
     
     // 监听静音状态更新
     on('voiceMuteUpdate', (data) => {
-      console.log('静音状态更新:', data)
+      console.log('[WebSocket] 静音状态更新:', data)
       // 这里可以添加静音状态更新的处理逻辑
     })
   }
@@ -252,6 +266,7 @@ export const useChatStore = defineStore('chat', () => {
     isMuted,
     isLoading,
     error,
+    currentRoomId,
     
     // 计算属性
     filteredMessages,

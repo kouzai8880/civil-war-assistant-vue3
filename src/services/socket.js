@@ -29,20 +29,27 @@ export const connectSocket = (token, avatar = '') => {
       
       // 连接WebSocket服务器
       console.log('正在连接WebSocket服务器...')
-      socket = io(SOCKET_URL, {
+      
+      // 简化连接参数，避免URL过长
+      const options = {
         auth: { token },
-        query: { avatar },
         reconnection: true,
         reconnectionAttempts: 5,
         reconnectionDelay: 1000,
         timeout: 10000,
-        transports: ['websocket'],  // 强制使用WebSocket传输
+        transports: ['websocket', 'polling'],  // 允许降级到轮询
         extraHeaders: {
           'Cache-Control': 'no-cache',
           'Pragma': 'no-cache'
-        },
-        maxHttpBufferSize: 1e8  // 增加缓冲区大小到100MB
-      })
+        }
+      }
+      
+      // 如果有头像且不是base64格式，才添加到query参数
+      if (avatar && !avatar.startsWith('data:')) {
+        options.query = { avatar }
+      }
+      
+      socket = io(SOCKET_URL, options)
       
       // 连接成功
       socket.on('connect', () => {
@@ -146,7 +153,7 @@ export const roomApi = {
       console.error('WebSocket未连接，无法加入房间')
       return
     }
-    console.log('加入房间:', roomId)
+    console.log('通过WebSocket加入房间:', roomId)
     socket.emit('joinRoom', { roomId })
   },
 
@@ -156,7 +163,7 @@ export const roomApi = {
       console.error('WebSocket未连接，无法离开房间')
       return
     }
-    console.log('离开房间:', roomId)
+    console.log('通过WebSocket离开房间:', roomId)
     socket.emit('leaveRoom', { roomId })
   },
 
@@ -210,5 +217,6 @@ export default {
   getSocket,
   lobbyApi,
   roomApi,
-  voiceApi
+  voiceApi,
+  sendRoomMessage: roomApi.sendRoomMessage
 } 

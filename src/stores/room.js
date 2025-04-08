@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { roomApi } from '../services/api'
 import { useUserStore } from './user'
+import { useSocketStore } from './socket'
 
 /**
  * 房间管理Store
@@ -214,8 +215,18 @@ export const useRoomStore = defineStore('room', () => {
     try {
       console.log(`用户 ${userStore.username} (${userStore.userId}) 尝试加入房间 ${roomId}`)
       
-      // 先获取房间详情，检查用户是否已经在房间中
-      const roomDetail = await roomApi.getRoomDetail(roomId)
+      // 确保 WebSocket 已连接
+      const socketStore = useSocketStore()
+      if (!socketStore.isConnected) {
+        console.log('WebSocket未连接，尝试连接...')
+        await socketStore.connect()
+        if (!socketStore.isConnected) {
+          throw new Error('WebSocket连接失败，无法加入房间')
+        }
+      }
+      
+      // 先获取房间详情
+      const roomDetail = await fetchRoomDetail(roomId)
       
       if (roomDetail.status === 'success' && roomDetail.data) {
         const room = roomDetail.data

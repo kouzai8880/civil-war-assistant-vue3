@@ -704,7 +704,7 @@ const leaveRoom = async () => {
     socketStore.leaveRoom()
     
     // 如果是玩家，从玩家列表移除
-    if (room.value.players) {
+    if (room.value?.players) {
       const playerIndex = room.value.players.findIndex(p => p.userId === userStore.userId)
       if (playerIndex !== -1) {
         room.value.players.splice(playerIndex, 1)
